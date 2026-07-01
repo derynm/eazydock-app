@@ -15,6 +15,7 @@ import { Screen } from '@/components/screen';
 import { AutocompleteField, Banner, Button, Card, Icon, Section, Select, Text, TextField, type AutocompleteItem } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { lookupPlate } from '@/features/transactions/plate-lookup';
+import { PlateScanner } from '@/features/transactions/plate-scanner';
 import { useTheme } from '@/hooks/use-theme';
 import { timeAgo } from '@/lib/format';
 import { DRIVER_TYPES } from '@/lib/options';
@@ -48,6 +49,7 @@ export default function CheckInScreen() {
   const qc = useQueryClient();
   const [topError, setTopError] = useState<string | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [lookup, setLookup] = useState<LookupState>({ status: 'idle' });
   const [revealed, setRevealed] = useState(false);
   const [editVehicle, setEditVehicle] = useState(false);
@@ -207,7 +209,7 @@ export default function CheckInScreen() {
                   icon="vehicles"
                   placeholder="ABC123"
                   autoCapitalize="characters"
-                  autoFocus={!revealed}
+                  autoFocus={false}
                   returnKeyType="search"
                   queryKey="checkin-vehicles"
                   minChars={1}
@@ -226,15 +228,46 @@ export default function CheckInScreen() {
               )}
             />
 
-            <Button
-              title={lookup.status === 'loading' ? 'Looking up…' : revealed ? 'Look up again' : 'Look up plate'}
-              icon="search"
-              variant={revealed ? 'secondary' : 'primary'}
-              size={revealed ? 'sm' : 'lg'}
-              loading={lookup.status === 'loading'}
-              onPress={runLookup}
-              fullWidth={!revealed}
-            />
+            {revealed ? (
+              <View style={styles.row}>
+                <Button
+                  title={lookup.status === 'loading' ? 'Looking up…' : 'Look up again'}
+                  icon="search"
+                  variant="secondary"
+                  size="sm"
+                  loading={lookup.status === 'loading'}
+                  onPress={runLookup}
+                  style={styles.flex}
+                />
+                <Button
+                  title="Scan"
+                  icon="scan"
+                  variant="secondary"
+                  size="sm"
+                  onPress={() => setScanning(true)}
+                />
+              </View>
+            ) : (
+              <View style={styles.columnGap}>
+                <Button
+                  title={lookup.status === 'loading' ? 'Looking up…' : 'Look up plate'}
+                  icon="search"
+                  variant="primary"
+                  size="lg"
+                  loading={lookup.status === 'loading'}
+                  onPress={runLookup}
+                  fullWidth
+                />
+                <Button
+                  title="Scan plate"
+                  icon="scan"
+                  variant="secondary"
+                  size="lg"
+                  onPress={() => setScanning(true)}
+                  fullWidth
+                />
+              </View>
+            )}
 
             {lookup.status === 'found' ? (
               <Banner
@@ -387,6 +420,16 @@ export default function CheckInScreen() {
           </>
         ) : null}
       </ScrollView>
+
+      <PlateScanner
+        visible={scanning}
+        onClose={() => setScanning(false)}
+        onResult={(r) => {
+          setValue('plate_number', r.plate);
+          setScanning(false);
+          runLookup();
+        }}
+      />
     </Screen>
   );
 }
@@ -396,6 +439,7 @@ const styles = StyleSheet.create({
   contentCentered: { flexGrow: 1, justifyContent: 'center' },
   newDriver: { gap: Spacing.md, padding: Spacing.md, borderRadius: Radius.md },
   row: { flexDirection: 'row', gap: Spacing.md },
+  columnGap: { gap: Spacing.sm },
   summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',

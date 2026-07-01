@@ -66,6 +66,10 @@ const ICONS = {
   sun: { ios: 'sun.max.fill', other: 'light_mode' },
   dot: { ios: 'circle.fill', other: 'circle' },
   occupancy: { ios: 'square.grid.3x3.fill', other: 'grid_on' },
+
+  scan: { ios: 'qrcode.viewfinder', other: 'crop_free' },
+  torch: { ios: 'flashlight.on.fill', other: 'flashlight_on' },
+  torchOff: { ios: 'flashlight.off.fill', other: 'flashlight_off' },
 } as const satisfies Record<string, Glyph>;
 
 export type IconName = keyof typeof ICONS;
