@@ -1,0 +1,122 @@
+import { useState, type ReactNode } from 'react';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
+
+import { EmptyState, Icon, SkeletonRows, Text } from '@/components/ui';
+import { Layout, Spacing } from '@/constants/theme';
+import { useResponsive } from '@/hooks/use-responsive';
+import { useTheme } from '@/hooks/use-theme';
+
+type Props<T> = {
+  items: T[];
+  getId: (item: T) => number;
+  renderRow: (item: T, opts: { selected: boolean; onPress: () => void }) => ReactNode;
+  /** Phone: navigate to the detail route. */
+  onOpen: (id: number) => void;
+  /** Tablet: rendered in the right pane. */
+  renderDetail: (id: number) => ReactNode;
+  loading: boolean;
+  errorMessage?: string;
+  onRetry?: () => void;
+  refreshing: boolean;
+  onRefresh: () => void;
+  onEndReached?: () => void;
+  loadingMore?: boolean;
+  emptyTitle: string;
+  emptyDescription?: string;
+  listHeader?: ReactNode;
+};
+
+export function ResponsiveListDetail<T>({
+  items,
+  getId,
+  renderRow,
+  onOpen,
+  renderDetail,
+  loading,
+  errorMessage,
+  onRetry,
+  refreshing,
+  onRefresh,
+  onEndReached,
+  loadingMore,
+  emptyTitle,
+  emptyDescription,
+  listHeader,
+}: Props<T>) {
+  const theme = useTheme();
+  const { isTablet } = useResponsive();
+  const [picked, setPicked] = useState<number | null>(null);
+
+  // Tablet: derive a valid selection (picked if still present, else first row).
+  const selectedId =
+    picked != null && items.some((i) => getId(i) === picked) ? picked : (items[0] ? getId(items[0]) : null);
+
+  const handlePress = (id: number) => {
+    if (isTablet) setPicked(id);
+    else onOpen(id);
+  };
+
+  const list = (
+    <FlatList
+      data={items}
+      keyExtractor={(item) => String(getId(item))}
+      renderItem={({ item }) =>
+        renderRow(item, { selected: isTablet && getId(item) === selectedId, onPress: () => handlePress(getId(item)) }) as React.ReactElement
+      }
+      contentContainerStyle={[styles.listContent, items.length === 0 && styles.listEmpty]}
+      ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.border }]} />}
+      ListHeaderComponent={listHeader ? <View style={styles.header}>{listHeader}</View> : null}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+      onEndReached={onEndReached}
+      onEndReachedThreshold={0.4}
+      ListFooterComponent={
+        loadingMore ? (
+          <View style={styles.footer}>
+            <ActivityIndicator color={theme.primary} />
+          </View>
+        ) : null
+      }
+      ListEmptyComponent={
+        loading ? (
+          <SkeletonRows count={8} />
+        ) : errorMessage ? (
+          <EmptyState tone="error" title="Couldn’t load" description={errorMessage} actionLabel="Retry" onAction={onRetry} />
+        ) : (
+          <EmptyState title={emptyTitle} description={emptyDescription} />
+        )
+      }
+    />
+  );
+
+  if (!isTablet) return list;
+
+  return (
+    <View style={styles.split}>
+      <View style={[styles.listPane, { width: Layout.listPaneWidth, borderRightColor: theme.border }]}>{list}</View>
+      <View style={styles.detailPane}>
+        {selectedId != null ? (
+          renderDetail(selectedId)
+        ) : (
+          <View style={styles.placeholder}>
+            <Icon name="sidebar" size={40} color={theme.textMuted} />
+            <Text variant="body" color="textMuted">
+              Select an item to see details
+            </Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  listContent: { paddingHorizontal: Spacing.sm, paddingBottom: Spacing.xxl },
+  listEmpty: { flexGrow: 1 },
+  header: { paddingHorizontal: Spacing.sm, paddingBottom: Spacing.sm },
+  sep: { height: StyleSheet.hairlineWidth, marginLeft: Spacing.md + 44 },
+  footer: { paddingVertical: Spacing.lg },
+  split: { flex: 1, flexDirection: 'row' },
+  listPane: { borderRightWidth: StyleSheet.hairlineWidth },
+  detailPane: { flex: 1 },
+  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
+});
