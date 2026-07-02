@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { toApiError, type ApiError } from '@/api/client';
+import { toApiError, type ApiError, API_URL, USE_FIXTURES } from '@/api/client';
 import { BrandMark } from '@/components/brand';
 import { Banner, Button, Icon, Text, TextField } from '@/components/ui';
 import { Brand, Radius, Spacing } from '@/constants/theme';
@@ -88,6 +88,9 @@ export default function Login() {
       <Button title="Sign in" icon="arrowRight" loading={submitting} onPress={onSubmit} fullWidth size="lg" />
       <Text variant="caption" color="textMuted" center>
         Trouble signing in? Contact your administrator.
+      </Text>
+      <Text variant="caption" color="textMuted" center style={{ opacity: 0.5 }}>
+        {USE_FIXTURES ? '⚙ fixtures (no API)' : `⚙ ${API_URL}`}
       </Text>
     </View>
   );

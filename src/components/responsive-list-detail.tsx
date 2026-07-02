@@ -24,6 +24,8 @@ type Props<T> = {
   emptyTitle: string;
   emptyDescription?: string;
   listHeader?: ReactNode;
+  /** Left inset for row separators. Defaults to icon-offset (56). Pass 0 for table layouts. */
+  separatorInset?: number;
 };
 
 export function ResponsiveListDetail<T>({
@@ -42,6 +44,7 @@ export function ResponsiveListDetail<T>({
   emptyTitle,
   emptyDescription,
   listHeader,
+  separatorInset = Spacing.md + 44,
 }: Props<T>) {
   const theme = useTheme();
   const { isTablet } = useResponsive();
@@ -64,7 +67,7 @@ export function ResponsiveListDetail<T>({
         renderRow(item, { selected: isTablet && getId(item) === selectedId, onPress: () => handlePress(getId(item)) }) as React.ReactElement
       }
       contentContainerStyle={[styles.listContent, items.length === 0 && styles.listEmpty]}
-      ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.border }]} />}
+      ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.border, marginLeft: separatorInset }]} />}
       ListHeaderComponent={listHeader ? <View style={styles.header}>{listHeader}</View> : null}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       onEndReached={onEndReached}
@@ -113,7 +116,7 @@ const styles = StyleSheet.create({
   listContent: { paddingHorizontal: Spacing.sm, paddingBottom: Spacing.xxl },
   listEmpty: { flexGrow: 1 },
   header: { paddingHorizontal: Spacing.sm, paddingBottom: Spacing.sm },
-  sep: { height: StyleSheet.hairlineWidth, marginLeft: Spacing.md + 44 },
+  sep: { height: StyleSheet.hairlineWidth },
   footer: { paddingVertical: Spacing.lg },
   split: { flex: 1, flexDirection: 'row' },
   listPane: { borderRightWidth: StyleSheet.hairlineWidth },

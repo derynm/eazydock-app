@@ -159,6 +159,7 @@ export type Booking = {
   parking_area?: { id: number; name: string };
   parking_space?: { id: number; space_code: string };
   tenant?: { id: number; name: string };
+  driver?: { id: number; full_name: string };
 };
 
 /* ---- Dashboard ---- */

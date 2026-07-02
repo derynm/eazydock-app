@@ -238,6 +238,7 @@ export const bookings: Booking[] = Array.from({ length: 18 }).map((_, i) => {
     parking_area: { id: area.id, name: area.name },
     parking_space: { id: space.id, space_code: space.space_code },
     tenant: { id: tenant.id, name: tenant.name },
+    driver: { id: driver.id, full_name: driver.full_name },
   };
 });
 

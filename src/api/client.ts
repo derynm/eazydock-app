@@ -28,6 +28,7 @@ api.interceptors.request.use(async (config) => {
   const companyId = await storage.get(StorageKeys.companyId);
   if (token) config.headers.Authorization = `Bearer ${token}`;
   if (companyId) config.headers['X-Company-Id'] = companyId;
+  console.log(`[API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`, config.params ?? '');
   return config;
 });
 
@@ -38,8 +39,12 @@ export function setUnauthorizedHandler(fn: () => void) {
 }
 
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    console.log(`[API] ✓ ${r.status} ${r.config.url}`);
+    return r;
+  },
   async (error: AxiosError) => {
+    console.warn(`[API] ✗ ${error.response?.status ?? 0} ${error.config?.url}`, error.message);
     if (error.response?.status === 401) {
       await storage.remove(StorageKeys.token);
       onUnauthorized?.();

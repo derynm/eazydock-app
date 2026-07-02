@@ -283,7 +283,7 @@ two layouts share logic and only differ in presentation.
 | **Transactions · list** | `GET /admin/transactions`, `/active-vehicles` | filter active/all, search |
 | **Transactions · detail** | `GET /admin/transactions/{id}` | check-out, change-space, cancel (`correct`/`mark-overstay` are a later pass) |
 | **Check-in** | `plate-lookup` (prefill on full plate), `vehicle-search`/`car-search`/`driver-search`, lookups | `POST /admin/transactions/check-in` — optional photo; **driver: pick existing (search) or type a new name → auto-created**; new car make/model/colour saved too |
-| **Bookings · list** | `GET /admin/bookings` | filter by status/area, search |
+| **Bookings · list** | `GET /admin/bookings` | filter by status, area, date range (`date_from`/`date_to`), search |
 | **Bookings · create/edit** | `GET /admin/bookings/form-data` | `POST` / `PUT /admin/bookings`; **driver: pick existing or type a new name → auto-created** |
 | **Bookings · detail** | `GET /admin/bookings/{id}` | fulfil, cancel, delete |
 | **Drivers** | `GET /admin/drivers` | create / edit / delete |
@@ -486,7 +486,7 @@ session; if unknown, everything is `null` and the app fills the form manually.
 
 | Method · Path | Action | Body / notes |
 |---|---|---|
-| `GET /admin/bookings?search=&status=&parking_area_id=&page=` | view | — |
+| `GET /admin/bookings?search=&status=&parking_area_id=&date_from=&date_to=&page=` | view | `date_from` / `date_to` are `YYYY-MM-DD`; filter on `starts_at` |
 | `GET /admin/bookings/form-data` | view | `{ buildings, areas, spaces, tenants, drivers }` pickers |
 | `POST /admin/bookings` | create | booking fields ↓ → 201 |
 | `GET /admin/bookings/{id}` | view | — |
@@ -506,7 +506,8 @@ When both are supplied, `driver_id` takes precedence. The driver is linked to an
 existing `vehicle_id` immediately, or to the vehicle created/resolved when the
 booking is fulfilled. Overlapping the same bay/time →
 `422 errors.parking_space_id`.
-**Resource:** `{ id, booking_no, status, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, driver_type, plate_number_raw, contact_name, contact_phone, starts_at, ends_at, notes, parking_transaction_id, created_at, + building, parking_area, parking_space, tenant }`.
+**Resource:** `{ id, booking_no, status, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, driver_type, plate_number_raw, contact_name, contact_phone, starts_at, ends_at, notes, parking_transaction_id, created_at, + building, parking_area, parking_space, tenant, driver? }`.
+`driver` (when linked): `{ id, full_name, phone, email, company_name }`.
 
 ---
 
