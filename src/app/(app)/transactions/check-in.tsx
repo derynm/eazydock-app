@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { toApiError } from '@/api/client';
 import { lookupBuildings, lookupParkingAreas, lookupParkingSpaces, lookupTenants, searchDrivers } from '@/api/lookups';
@@ -185,6 +185,7 @@ export default function CheckInScreen() {
 
   return (
     <Screen title="New check-in" onBack={() => router.back()}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <ScrollView
         contentContainerStyle={[styles.content, !revealed && styles.contentCentered]}
         keyboardShouldPersistTaps="handled"
@@ -420,6 +421,7 @@ export default function CheckInScreen() {
           </>
         ) : null}
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <PlateScanner
         visible={scanning}

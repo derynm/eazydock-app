@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
@@ -87,31 +87,37 @@ export function AutocompleteField({
               </Text>
             </View>
           ) : (
-            results.slice(0, 8).map((item, i) => (
-              <Pressable
-                key={item.id}
-                onPress={() => {
-                  onSelect(item);
-                  setFocused(false);
-                }}
-                style={({ pressed }) => [
-                  styles.item,
-                  i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border },
-                  pressed && { backgroundColor: theme.surfaceSunken },
-                ]}>
-                <View style={styles.flex}>
-                  <Text variant="body" numberOfLines={1}>
-                    {item.label}
-                  </Text>
-                  {item.hint ? (
-                    <Text variant="caption" color="textMuted" numberOfLines={1}>
-                      {item.hint}
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              bounces={false}
+              style={styles.list}>
+              {results.slice(0, 8).map((item, i) => (
+                <Pressable
+                  key={item.id}
+                  onPress={() => {
+                    onSelect(item);
+                    setFocused(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.item,
+                    i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border },
+                    pressed && { backgroundColor: theme.surfaceSunken },
+                  ]}>
+                  <View style={styles.flex}>
+                    <Text variant="body" numberOfLines={1}>
+                      {item.label}
                     </Text>
-                  ) : null}
-                </View>
-                <Icon name="arrowRight" size={16} color={theme.textMuted} />
-              </Pressable>
-            ))
+                    {item.hint ? (
+                      <Text variant="caption" color="textMuted" numberOfLines={1}>
+                        {item.hint}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Icon name="arrowRight" size={16} color={theme.textMuted} />
+                </Pressable>
+              ))}
+            </ScrollView>
           )}
         </View>
       ) : null}
@@ -126,6 +132,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
+  list: { maxHeight: 220 },
   msg: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.md, justifyContent: 'center' },
   item: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, padding: Spacing.md },
   flex: { flex: 1 },

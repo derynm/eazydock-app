@@ -10,12 +10,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.eazydock.app",
-      "buildNumber": "4",
+      "buildNumber": "7",
       "appleTeamId": "XATRLC4CB4"
     },
     "android": {
       "package": "com.eazydock.app",
-      "versionCode": 4,
+      "versionCode": 7,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#0B1F33",

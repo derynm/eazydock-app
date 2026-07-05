@@ -1,6 +1,6 @@
 import { api, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { Booking, Building, DriverType, ListParams, Paginator, ParkingArea, ParkingSpace, Tenant } from './types';
+import type { Booking, BookingsBySpaceResponse, Building, DriverType, ListParams, Paginator, ParkingArea, ParkingSpace, Tenant } from './types';
 
 export type BookingInput = {
   building_id: number;
@@ -44,8 +44,13 @@ export async function listBookings(params: ListParams = {}): Promise<Paginator<B
     return fx.delay(fx.paginate(rows, Number(params.page) || 1));
   }
   try {
-    const { data } = await api.get<Paginator<Booking>>('/admin/bookings', { params });
-    return data;
+    const { data } = await api.get<BookingsBySpaceResponse>('/admin/bookings/by-space', { params });
+    const bookings = data.data.flatMap((group) => group.bookings);
+    return {
+      data: bookings,
+      links: { first: null, last: null, prev: null, next: null },
+      meta: { current_page: 1, last_page: 1, per_page: bookings.length, total: bookings.length },
+    };
   } catch (e) {
     throw toApiError(e);
   }

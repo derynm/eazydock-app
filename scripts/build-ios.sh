@@ -39,26 +39,25 @@ command -v pod >/dev/null 2>&1 || {
   exit 1
 }
 
-export EXPO_PUBLIC_API_URL="${API_URL:-https://eazydoc.eazycab.au/api}"
-export EXPO_NO_DOTENV=1
-echo ">> Production API: ${EXPO_PUBLIC_API_URL}"
+PROD_API="${API_URL:-https://eazydoc.eazycab.au/api}"
+echo ">> Production API: ${PROD_API}"
 
 echo ">> Installing locked pnpm dependencies..."
 pnpm install --frozen-lockfile
 
 echo ">> Verifying the production API in a clean iOS bundle..."
 VERIFY_DIR=".expo/production-export/ios"
-pnpm exec expo export --clear --platform ios --output-dir "${VERIFY_DIR}"
-grep -RqsF "${EXPO_PUBLIC_API_URL}" "${VERIFY_DIR}" || {
+EXPO_NO_DOTENV=1 EXPO_PUBLIC_API_URL="${PROD_API}" pnpm exec expo export --clear --platform ios --output-dir "${VERIFY_DIR}"
+grep -RqsF "${PROD_API}" "${VERIFY_DIR}" || {
   echo "ERROR: production API was not embedded in the iOS bundle."
   exit 1
 }
 
 echo ">> Prebuilding a clean iOS project..."
-pnpm exec expo prebuild --platform ios --clean
+EXPO_NO_DOTENV=1 EXPO_PUBLIC_API_URL="${PROD_API}" pnpm exec expo prebuild --platform ios --clean
 
 echo ">> Building and launching iOS (${CONFIG})..."
-pnpm exec expo run:ios --configuration "${CONFIG}" "$@"
+EXPO_NO_DOTENV=1 EXPO_PUBLIC_API_URL="${PROD_API}" pnpm exec expo run:ios --configuration "${CONFIG}" "$@"
 
 echo ""
 echo "OK: iOS ${CONFIG} build completed."

@@ -136,6 +136,16 @@ export type Transaction = {
   events?: TransactionEvent[];
 };
 
+export type BookingsBySpaceGroup = {
+  parking_space_id: number | null;
+  space_code: string | null;
+  bookings: Booking[];
+};
+
+export type BookingsBySpaceResponse = {
+  data: BookingsBySpaceGroup[];
+};
+
 export type Booking = {
   id: number;
   booking_no: string;

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 
 import { createBooking, getBookingFormData, type BookingInput } from '@/api/bookings';
 import { toApiError } from '@/api/client';
@@ -167,6 +167,7 @@ export function BookingCreate() {
 
   return (
     <Screen title="New booking" onBack={() => router.back()}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <ScrollView
         contentContainerStyle={[styles.content, !revealed && styles.contentCentered]}
         keyboardShouldPersistTaps="handled"
@@ -471,11 +472,13 @@ export function BookingCreate() {
           </>
         ) : null}
       </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   content: { padding: Spacing.lg, gap: Spacing.lg },
   contentCentered: { flexGrow: 1, justifyContent: 'center' },
   newDriver: { gap: Spacing.md, padding: Spacing.md, borderRadius: Radius.md },

@@ -97,7 +97,7 @@ function eventGeometry(startsAt: string, endsAt: string) {
 
 // ── Sub-components ────────────────────────────────────────────────────
 
-/** Column header cell — one per booking, shows Space / Driver / Tenant */
+/** Column header — space code only */
 function ColHeader({ booking, colW }: { booking: Booking; colW: number }) {
   const theme = useTheme();
   const color = bookingColor(booking.id);
@@ -106,17 +106,11 @@ function ColHeader({ booking, colW }: { booking: Booking; colW: number }) {
       <Text variant="label" numberOfLines={1}>
         {booking.parking_space?.space_code ?? '—'}
       </Text>
-      <Text variant="caption" numberOfLines={1} style={{ color: theme.text }}>
-        {booking.driver?.full_name ?? '—'}
-      </Text>
-      <Text variant="caption" numberOfLines={1} color="textMuted">
-        {booking.tenant?.name ?? '—'}
-      </Text>
     </View>
   );
 }
 
-/** Event block — positioned inside its booking column by time */
+/** Event block — time range, plate, driver, tenant */
 function ColEvent({ booking, onPress }: { booking: Booking; onPress: () => void }) {
   const { top, height } = eventGeometry(booking.starts_at, booking.ends_at);
   const color = bookingColor(booking.id);
@@ -126,9 +120,16 @@ function ColEvent({ booking, onPress }: { booking: Booking; onPress: () => void 
       activeOpacity={0.75}
       style={[styles.colEvent, { top, height, backgroundColor: color + '18', borderColor: color + '55' }]}>
       <View style={[styles.colEventBar, { backgroundColor: color }]} />
-      <Text variant="caption" numberOfLines={2} style={{ flex: 1 }}>
-        {`${formatTime(booking.starts_at)}\n– ${formatTime(booking.ends_at)}`}
-      </Text>
+      <View style={styles.colEventBody}>
+        <Text variant="caption" numberOfLines={1} style={styles.colEventTime}>
+          {`${formatTime(booking.starts_at)} – ${formatTime(booking.ends_at)}`}
+        </Text>
+        <Text variant="caption" numberOfLines={1}>{booking.plate_number_raw}</Text>
+        <Text variant="caption" numberOfLines={1}>{booking.driver?.full_name ?? '—'}</Text>
+        {booking.tenant?.name ? (
+          <Text variant="caption" numberOfLines={1} color="textMuted">{booking.tenant.name}</Text>
+        ) : null}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -182,10 +183,9 @@ export default function BookingsScreen() {
   const dateStr = toISODate(selectedDate);
 
   const list = usePaginatedList(['bookings', dateStr, debounced, status], listBookings, {
-    search: debounced,
+    search: debounced || undefined,
     status: status || undefined,
-    date_from: dateStr,
-    date_to: dateStr,
+    date: dateStr,
   });
 
   const count = list.items.length;
@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     borderWidth: 1,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
     paddingVertical: 4,
     overflow: 'hidden',
   },
@@ -434,6 +434,14 @@ const styles = StyleSheet.create({
     width: BAR_W,
     alignSelf: 'stretch',
     marginRight: 4,
+  },
+  colEventBody: {
+    flex: 1,
+    gap: 1,
+    overflow: 'hidden',
+  },
+  colEventTime: {
+    fontWeight: '600',
   },
 
   // Hour lines
