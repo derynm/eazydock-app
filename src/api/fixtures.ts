@@ -4,17 +4,25 @@
  * Mutations persist for the session (kept in module-level arrays).
  */
 import type {
+  Allocation,
   Booking,
   Building,
+  BuildingResource,
   Company,
+  CompanyUser,
   DashboardResponse,
   Driver,
+  Incident,
   ParkingArea,
+  ParkingAreaResource,
   ParkingSpace,
+  ParkingSpaceResource,
   Paginator,
+  RoleResource,
   Tenant,
   Transaction,
   UserPayload,
+  UserResource,
   Vehicle,
 } from './types';
 
@@ -40,11 +48,31 @@ export const userPayload: UserPayload = {
     dashboard: { view: true },
     'operations.transactions': ALL_ACTIONS,
     'operations.bookings': ALL_ACTIONS,
+    'operations.incidents': ALL_ACTIONS,
     'people_vehicles.drivers': ALL_ACTIONS,
     'people_vehicles.vehicles': ALL_ACTIONS,
     'locations.tenants': { view: true, create: true, update: true, delete: false },
+    'locations.buildings': ALL_ACTIONS,
+    'locations.parking_areas': ALL_ACTIONS,
+    'locations.spaces': ALL_ACTIONS,
+    'locations.allocations': ALL_ACTIONS,
+    'administration.users': ALL_ACTIONS,
   },
 };
+
+export const roles: RoleResource[] = [
+  { id: 1, name: 'Admin', slug: 'admin', scope: 'system', company_id: null },
+  { id: 2, name: 'Manager', slug: 'manager', scope: 'system', company_id: null },
+  { id: 3, name: 'Supervisor', slug: 'supervisor', scope: 'system', company_id: null },
+  { id: 4, name: 'Operation', slug: 'operation', scope: 'system', company_id: null },
+  { id: 5, name: 'Employee', slug: 'employee', scope: 'system', company_id: null },
+];
+
+export const users: UserResource[] = [
+  { id: 1, name: 'Jordan Avery', email: 'jordan@acme.test', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), company_users: [{ id: 1, company_id: 3, role_id: 1, status: 'active', role: { id: 1, name: 'Admin', slug: 'admin' } }] },
+  { id: 2, name: 'Sam Taylor', email: 'sam@acme.test', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), company_users: [{ id: 2, company_id: 3, role_id: 2, status: 'active', role: { id: 2, name: 'Manager', slug: 'manager' } }] },
+  { id: 3, name: 'Alex Kim', email: 'alex@acme.test', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), company_users: [{ id: 3, company_id: 3, role_id: 4, status: 'inactive', role: { id: 4, name: 'Operation', slug: 'operation' } }] },
+];
 
 /* ---- Locations ---- */
 export const buildings: Building[] = [
@@ -239,6 +267,95 @@ export const bookings: Booking[] = Array.from({ length: 18 }).map((_, i) => {
     parking_space: { id: space.id, space_code: space.space_code },
     tenant: { id: tenant.id, name: tenant.name },
     driver: { id: driver.id, full_name: driver.full_name },
+  };
+});
+
+/* ---- Phase 2 fixtures ---- */
+
+export const buildingResources: BuildingResource[] = [
+  { id: 1, name: 'Riverside Tower', code: 'RIV', building_type: 'office', contact_name: 'Sam Walsh', contact_phone: '0291230001', contact_email: 'sam@riverside.test', address_line_1: '1 Riverside Drive', address_line_2: null, suburb: 'Sydney', state: 'NSW', postal_code: '2000', country: 'Australia', latitude: -33.8688, longitude: 151.2093, status: 'active', created_at: iso(60 * 24 * 30), updated_at: iso(60 * 24 * 5) },
+  { id: 2, name: 'Dock 7 Warehouse', code: 'D7W', building_type: 'warehouse', contact_name: 'Riley Park', contact_phone: '0291230002', contact_email: 'riley@dock7.test', address_line_1: '7 Dock Street', address_line_2: null, suburb: 'Pyrmont', state: 'NSW', postal_code: '2009', country: 'Australia', latitude: -33.8714, longitude: 151.1945, status: 'active', created_at: iso(60 * 24 * 25), updated_at: iso(60 * 24 * 3) },
+  { id: 3, name: 'Central Plaza', code: 'CPZ', building_type: 'mixed', contact_name: 'Morgan Lee', contact_phone: '0291230003', contact_email: 'morgan@centralplaza.test', address_line_1: '50 Central Avenue', address_line_2: 'Level 1', suburb: 'Melbourne', state: 'VIC', postal_code: '3000', country: 'Australia', latitude: -37.8136, longitude: 144.9631, status: 'active', created_at: iso(60 * 24 * 20), updated_at: iso(60 * 24 * 2) },
+];
+
+export const parkingAreaResources: ParkingAreaResource[] = [
+  { id: 1, building_id: 1, name: 'Level B1', code: 'B1', level: 'B1', area_type: 'standard', capacity: 40, status: 'active', notes: null, created_at: iso(60 * 24 * 28), updated_at: iso(60 * 24 * 4), building: { id: 1, name: 'Riverside Tower' } },
+  { id: 2, building_id: 1, name: 'Level B2', code: 'B2', level: 'B2', area_type: 'visitor', capacity: 20, status: 'active', notes: 'Visitor parking only', created_at: iso(60 * 24 * 28), updated_at: iso(60 * 24 * 4), building: { id: 1, name: 'Riverside Tower' } },
+  { id: 3, building_id: 2, name: 'Loading Bay A', code: 'LBA', level: 'Ground', area_type: 'loading', capacity: 8, status: 'active', notes: null, created_at: iso(60 * 24 * 23), updated_at: iso(60 * 24 * 2), building: { id: 2, name: 'Dock 7 Warehouse' } },
+  { id: 4, building_id: 2, name: 'Yard', code: 'YRD', level: null, area_type: 'contractor', capacity: 15, status: 'maintenance', notes: 'Resurfacing in progress', created_at: iso(60 * 24 * 23), updated_at: iso(60 * 24 * 1), building: { id: 2, name: 'Dock 7 Warehouse' } },
+  { id: 5, building_id: 3, name: 'Visitor Deck', code: 'VD1', level: 'Roof', area_type: 'visitor', capacity: 30, status: 'active', notes: null, created_at: iso(60 * 24 * 18), updated_at: iso(60 * 24 * 1), building: { id: 3, name: 'Central Plaza' } },
+];
+
+const SPACE_TYPES_FX = ['standard', 'accessible', 'ev', 'visitor', 'standard', 'standard', 'loading', 'motorcycle'] as const;
+const USAGE_FX = ['tenant', 'visitor', 'flexible', 'visitor', 'building_owner', 'contractor', 'delivery', 'tenant'] as const;
+const OP_STATUS_FX = ['active', 'active', 'active', 'active', 'active', 'active', 'maintenance', 'blocked'] as const;
+
+export const parkingSpaceResources: ParkingSpaceResource[] = parkingAreaResources.flatMap((area) =>
+  Array.from({ length: 8 }).map<ParkingSpaceResource>((_, i) => {
+    const isOccupied = i % 3 === 0;
+    const txn = isOccupied ? transactions[i % 12] : null;
+    return {
+      id: area.id * 100 + i + 1,
+      building_id: area.building_id,
+      parking_area_id: area.id,
+      space_code: `${area.code}-${String(i + 1).padStart(2, '0')}`,
+      space_type: SPACE_TYPES_FX[i % SPACE_TYPES_FX.length],
+      default_usage: USAGE_FX[i % USAGE_FX.length],
+      operational_status: OP_STATUS_FX[i % OP_STATUS_FX.length],
+      occupancy_status: isOccupied ? 'occupied' : 'available',
+      current_transaction_id: txn?.id ?? null,
+      current_vehicle_id: txn?.vehicle_id ?? null,
+      occupied_since: txn?.car_in_at ?? null,
+      sort_order: i + 1,
+      notes: null,
+      created_at: iso(60 * 24 * 25),
+      updated_at: iso(60 * 2),
+      building: { id: area.building_id, name: buildingResources.find((b) => b.id === area.building_id)?.name ?? '' },
+      parking_area: { id: area.id, name: area.name },
+      current_transaction: txn ? { id: txn.id, transaction_no: txn.transaction_no, car_in_at: txn.car_in_at, status: txn.status } : null,
+      current_vehicle: txn?.vehicle ? { id: txn.vehicle.id, plate_number: txn.vehicle.plate_number } : null,
+    };
+  }),
+);
+
+export const allocations: Allocation[] = [
+  { id: 1, building_id: 1, tenant_id: 1, parking_area_id: 1, allocation_type: 'flexible_quota', user_category: 'tenant', quota: 10, release_after_minutes: 30, starts_at: null, ends_at: null, status: 'active', notes: null, created_at: iso(60 * 24 * 15), updated_at: iso(60 * 24 * 5), building: { id: 1, name: 'Riverside Tower' }, tenant: { id: 1, name: 'Brightline Apparel' }, parking_area: { id: 1, name: 'Level B1' } },
+  { id: 2, building_id: 1, tenant_id: null, parking_area_id: 2, allocation_type: 'visitor_quota', user_category: 'visitor', quota: 20, release_after_minutes: 60, starts_at: null, ends_at: null, status: 'active', notes: 'General visitor slots', created_at: iso(60 * 24 * 12), updated_at: iso(60 * 24 * 3), building: { id: 1, name: 'Riverside Tower' }, tenant: null, parking_area: { id: 2, name: 'Level B2' } },
+  { id: 3, building_id: 2, tenant_id: 3, parking_area_id: 3, allocation_type: 'loading_quota', user_category: 'delivery', quota: 4, release_after_minutes: null, starts_at: null, ends_at: null, status: 'active', notes: null, created_at: iso(60 * 24 * 10), updated_at: iso(60 * 24 * 2), building: { id: 2, name: 'Dock 7 Warehouse' }, tenant: { id: 3, name: 'Quill & Co Legal' }, parking_area: { id: 3, name: 'Loading Bay A' } },
+  { id: 4, building_id: 3, tenant_id: null, parking_area_id: null, allocation_type: 'temporary_quota', user_category: 'contractor', quota: 6, release_after_minutes: null, starts_at: new Date(now - 30 * 86400_000).toISOString().slice(0, 10), ends_at: new Date(now + 60 * 86400_000).toISOString().slice(0, 10), status: 'active', notes: 'Construction crew', created_at: iso(60 * 24 * 8), updated_at: iso(60 * 24 * 1), building: { id: 3, name: 'Central Plaza' }, tenant: null, parking_area: null },
+];
+
+
+const INCIDENT_TYPES_FX = ['overstay', 'damage', 'blocked_space', 'unauthorised_vehicle', 'safety', 'other'] as const;
+const INCIDENT_STATUS_FX = ['open', 'open', 'resolved', 'open', 'cancelled', 'resolved'] as const;
+
+export const incidents: Incident[] = Array.from({ length: 10 }).map((_, i) => {
+  const txn = transactions[i % 12];
+  const space = parkingSpaceResources[i % parkingSpaceResources.length];
+  const resolved = INCIDENT_STATUS_FX[i % INCIDENT_STATUS_FX.length] === 'resolved';
+  const resolvedAt = resolved ? iso(60 * (i + 1)) : null;
+  return {
+    id: i + 1,
+    parking_transaction_id: i % 3 === 0 ? txn.id : null,
+    parking_space_id: i % 2 === 0 ? space.id : null,
+    incident_type: INCIDENT_TYPES_FX[i % INCIDENT_TYPES_FX.length],
+    description: [
+      'Vehicle has exceeded maximum stay time.',
+      'Front bumper damage observed on parked van.',
+      'Bay blocked by unidentified vehicle.',
+      'Unregistered vehicle found in reserved area.',
+      'Oil spill in bay — hazmat cleanup needed.',
+      'Space occupied outside of allocated hours.',
+    ][i % 6],
+    status: INCIDENT_STATUS_FX[i % INCIDENT_STATUS_FX.length],
+    reported_by: 1,
+    resolved_by: resolved ? 1 : null,
+    resolved_at: resolvedAt,
+    created_at: iso(60 * 24 * (i + 1)),
+    updated_at: resolvedAt ?? iso(60 * 24 * i),
+    parking_transaction: i % 3 === 0 ? { id: txn.id, transaction_no: txn.transaction_no } : null,
+    parking_space: i % 2 === 0 ? { id: space.id, space_code: space.space_code } : null,
+    reporter: { id: 1, name: 'Jordan Avery' },
   };
 });
 

@@ -1,10 +1,13 @@
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Modal,
+  Platform,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,18 +15,20 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { listBookings } from '@/api/bookings';
-import type { Booking } from '@/api/types';
+import { listBookingsBySpace } from '@/api/bookings';
+import { lookupParkingAreas } from '@/api/lookups';
+import type { Booking, BookingsBySpaceGroup, SpaceStatus } from '@/api/types';
 import { Screen } from '@/components/screen';
-import { Button, IconButton, SearchBar, Segmented, Text } from '@/components/ui';
+import { Banner, Button, FilterSheet, IconButton, SearchBar, Segmented, Select, Text } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { usePaginatedList } from '@/hooks/use-paginated-list';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useResponsive } from '@/hooks/use-responsive';
-import { useTheme } from '@/hooks/use-theme';
-import { formatTime } from '@/lib/format';
+import { useScheme, useTheme } from '@/hooks/use-theme';
+import { useSession } from '@/auth/session';
+import { formatPlate, formatTime } from '@/lib/format';
 
 // ── Date helpers ──────────────────────────────────────────────────────
 function toISODate(d: Date): string {
@@ -50,99 +55,205 @@ function formatNavDate(d: Date): string {
 
 const FILTERS = [
   { value: '', label: 'All' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'fulfilled', label: 'Fulfilled' },
-  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'available', label: 'Available' },
+  { value: 'booked', label: 'Booked' },
+  { value: 'occupied', label: 'Occupied' },
 ] as const;
 
-// ── Per-booking color palette (cycles by id) ─────────────────────────
-const PALETTE = [
-  '#4A90D9', // blue
-  '#E67E22', // orange
-  '#27AE60', // green
-  '#8E44AD', // purple
-  '#E74C3C', // red
-  '#16A085', // teal
-  '#F39C12', // amber
-  '#2471A3', // navy
-];
-function bookingColor(id: number): string {
-  return PALETTE[id % PALETTE.length];
-}
-
-// ── Calendar geometry ─────────────────────────────────────────────────
-const HOUR_H = 64;
-const TIMELINE_W = 52;
-const COLUMN_W = 110;   // each booking gets its own column
-const BAR_W = 4;
+// ── Grid geometry ─────────────────────────────────────────────────────
+const ROW_H = 52;
+const TIME_COL_W = 84;
+const CELL_W = 96;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
-const GRID_H = 24 * HOUR_H;
+const BLOCK_INSET = 3;
+// Tall enough to always fit all 4 detail lines (time, driver, plate, tenant),
+// even for a 1-hour booking — so short bookings never get truncated.
+const BLOCK_MIN_H = ROW_H;
+const BLOCK_LINE_H = 11;
+const BLOCK_V_PADDING = 4;
 
-// ── Helpers ───────────────────────────────────────────────────────────
-function hourLabel(h: number): string {
-  if (h === 0) return '';
-  if (h < 12) return `${h} AM`;
-  if (h === 12) return '12 PM';
-  return `${h - 12} PM`;
+function fullHourLabel(h: number): string {
+  const period = h < 12 ? 'AM' : 'PM';
+  const displayHour = h % 12 === 0 ? 12 : h % 12;
+  return `${displayHour}:00 ${period}`;
 }
 
-function eventGeometry(startsAt: string, endsAt: string) {
-  const s = new Date(startsAt);
-  const e = new Date(endsAt);
-  const top = (s.getHours() + s.getMinutes() / 60) * HOUR_H;
-  const dh = (e.getTime() - s.getTime()) / 3_600_000;
-  return { top, height: Math.max(dh * HOUR_H, 48) };
+type BookingSegment = {
+  booking: Booking;
+  top: number;
+  height: number;
+  status: SpaceStatus;
+};
+
+/**
+ * Merges a space's bookings for the selected day into vertically-stacked
+ * blocks (one per booking, spanning its full duration) instead of one dot
+ * per hour cell — avoids the disconnected-pill look for multi-hour bookings.
+ */
+function daySegments(bookings: Booking[], selectedDate: Date): BookingSegment[] {
+  const dayStart = new Date(selectedDate);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 3_600_000);
+
+  const segments: BookingSegment[] = [];
+  for (const b of bookings) {
+    if (b.status === 'cancelled' || b.status === 'expired') continue;
+    const s = new Date(b.starts_at);
+    const e = new Date(b.ends_at);
+    if (e <= dayStart || s >= dayEnd) continue;
+
+    const clippedStart = s < dayStart ? dayStart : s;
+    const clippedEnd = e > dayEnd ? dayEnd : e;
+    const startHour = (clippedStart.getTime() - dayStart.getTime()) / 3_600_000;
+    const endHour = (clippedEnd.getTime() - dayStart.getTime()) / 3_600_000;
+
+    segments.push({
+      booking: b,
+      top: startHour * ROW_H,
+      height: Math.max((endHour - startHour) * ROW_H, BLOCK_MIN_H),
+      status: b.status === 'fulfilled' ? 'occupied' : 'booked',
+    });
+  }
+  return segments;
+}
+
+/** Time range, driver, plate, tenant — in priority order, trimmed to whatever fits the block's height. */
+function bookingLines(booking: Booking): string[] {
+  const lines = [
+    `${formatTime(booking.starts_at)}–${formatTime(booking.ends_at)}`,
+    booking.driver?.full_name || booking.contact_name || undefined,
+    formatPlate(booking.plate_number_raw) || undefined,
+    booking.tenant?.name || undefined,
+  ];
+  return lines.filter((l): l is string => !!l);
 }
 
 // ── Sub-components ────────────────────────────────────────────────────
 
-/** Column header — space code only */
-function ColHeader({ booking, colW }: { booking: Booking; colW: number }) {
+/** Column header — space code only; per-hour status lives in the grid cells below. */
+function ColHeader({ group, colW }: { group: BookingsBySpaceGroup; colW: number }) {
   const theme = useTheme();
-  const color = bookingColor(booking.id);
   return (
-    <View style={[styles.colHead, { width: colW, borderRightColor: theme.borderStrong, borderBottomColor: color }]}>
-      <Text variant="label" numberOfLines={1}>
-        {booking.parking_space?.space_code ?? '—'}
-      </Text>
+    <View style={[styles.colHead, { width: colW, borderRightColor: theme.borderStrong }]}>
+      <Text variant="label" numberOfLines={1}>{group.space_code}</Text>
     </View>
   );
 }
 
-/** Event block — time range, plate, driver, tenant */
-function ColEvent({ booking, onPress }: { booking: Booking; onPress: () => void }) {
-  const { top, height } = eventGeometry(booking.starts_at, booking.ends_at);
-  const color = bookingColor(booking.id);
+/**
+ * A booked or occupied slot rendered as one inset card spanning its full
+ * duration — translucent tint (hour gridlines still read through), a
+ * colored left accent bar, and as many detail lines as the height fits.
+ */
+function BookingBlock({ segment, colW, onPress }: { segment: BookingSegment; colW: number; onPress: () => void }) {
+  const theme = useTheme();
+  const { booking, top, height, status } = segment;
+  const isOccupied = status === 'occupied';
+  const accent = isOccupied ? theme.info : theme.warning;
+  const fill = isOccupied ? theme.infoSoft : theme.warningSoft;
+  const lines = bookingLines(booking);
+  const maxLines = Math.max(1, Math.floor((height - BLOCK_V_PADDING * 2) / BLOCK_LINE_H));
+  const visibleLines = lines.slice(0, maxLines);
+
   return (
     <TouchableOpacity
-      onPress={onPress}
       activeOpacity={0.75}
-      style={[styles.colEvent, { top, height, backgroundColor: color + '18', borderColor: color + '55' }]}>
-      <View style={[styles.colEventBar, { backgroundColor: color }]} />
-      <View style={styles.colEventBody}>
-        <Text variant="caption" numberOfLines={1} style={styles.colEventTime}>
-          {`${formatTime(booking.starts_at)} – ${formatTime(booking.ends_at)}`}
+      onPress={onPress}
+      style={[
+        styles.block,
+        {
+          top,
+          height,
+          width: colW - BLOCK_INSET * 2,
+          left: BLOCK_INSET,
+          backgroundColor: fill,
+          borderLeftWidth: 3,
+          borderLeftColor: accent,
+        },
+      ]}>
+      {visibleLines.map((line, i) => (
+        <Text
+          key={i}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          style={[styles.blockLine, { color: theme.text, fontWeight: i === 0 ? '700' : '400' }]}>
+          {line}
         </Text>
-        <Text variant="caption" numberOfLines={1}>{booking.plate_number_raw}</Text>
-        <Text variant="caption" numberOfLines={1}>{booking.driver?.full_name ?? '—'}</Text>
-        {booking.tenant?.name ? (
-          <Text variant="caption" numberOfLines={1} color="textMuted">{booking.tenant.name}</Text>
-        ) : null}
-      </View>
+      ))}
     </TouchableOpacity>
   );
 }
 
-/** Red "now" line across the full columns width */
-function NowLine() {
+/** One space's full-day column: hour gridlines behind, booking blocks overlaid on top. */
+function GridColumn({
+  group,
+  colW,
+  selectedDate,
+  isToday,
+  nowHour,
+  onPressBooking,
+}: {
+  group: BookingsBySpaceGroup;
+  colW: number;
+  selectedDate: Date;
+  isToday: boolean;
+  nowHour: number;
+  onPressBooking: (booking: Booking) => void;
+}) {
   const theme = useTheme();
-  const now = new Date();
-  const top = (now.getHours() + now.getMinutes() / 60) * HOUR_H;
+  const segments = useMemo(() => daySegments(group.bookings, selectedDate), [group.bookings, selectedDate]);
+
   return (
-    <View style={[styles.nowLine, { top }]} pointerEvents="none">
-      <View style={[styles.nowDot, { backgroundColor: theme.danger }]} />
-      <View style={[styles.nowBar, { backgroundColor: theme.danger }]} />
+    <View
+      style={[
+        styles.gridColumn,
+        {
+          width: colW,
+          height: ROW_H * HOURS.length,
+          borderRightColor: theme.borderStrong,
+        },
+      ]}>
+      {HOURS.map((h) => (
+        <View
+          key={h}
+          style={[
+            styles.gridRowBg,
+            {
+              height: ROW_H,
+              borderBottomColor: theme.border,
+              backgroundColor: isToday && h === nowHour ? theme.primarySoft : 'transparent',
+            },
+          ]}
+        />
+      ))}
+      {segments.map((seg) => (
+        <BookingBlock
+          key={seg.booking.id}
+          segment={seg}
+          colW={colW}
+          onPress={() => onPressBooking(seg.booking)}
+        />
+      ))}
+    </View>
+  );
+}
+
+function LegendItem({ color, outline, label }: { color: string; outline?: boolean; label: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, outline ? { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: color } : { backgroundColor: color }]} />
+      <Text variant="caption" color="textMuted">{label}</Text>
+    </View>
+  );
+}
+
+function Legend() {
+  const theme = useTheme();
+  return (
+    <View style={styles.legend}>
+      <LegendItem color={theme.border} outline label="Available" />
+      <LegendItem color={theme.warning} label="Booked" />
+      <LegendItem color={theme.info} label="Occupied" />
     </View>
   );
 }
@@ -151,61 +262,86 @@ function NowLine() {
 export default function BookingsScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const scheme = useScheme();
+  const insets = useSafeAreaInsets();
   const { can } = usePermissions();
   const { isTablet } = useResponsive();
+  const { selectedBuilding } = useSession();
   const { width: screenWidth } = useWindowDimensions();
   const vScrollRef = useRef<ScrollView>(null);
   const headerHRef = useRef<ScrollView>(null);
   const bodyHRef = useRef<ScrollView>(null);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [areaId, setAreaId] = useState<number | null>(null);
   const [showFilter, setShowFilter] = useState(false);
-  const hasFilters = search !== '' || status !== '';
-  const slideAnim = useRef(new Animated.Value(400)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  const openFilter = () => {
-    setShowFilter(true);
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, damping: 26, stiffness: 220, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const closeFilter = () => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 0, duration: 160, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 400, duration: 200, useNativeDriver: true }),
-    ]).start(() => setShowFilter(false));
-  };
+  const hasFilters = search !== '' || status !== '' || areaId !== null;
   const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [iosDateOpen, setIosDateOpen] = useState(false);
+  const [draftDate, setDraftDate] = useState(selectedDate);
   const debounced = useDebouncedValue(search);
   const dateStr = toISODate(selectedDate);
+  const isToday = dateStr === toISODate(new Date());
+  const nowHour = new Date().getHours();
 
-  const list = usePaginatedList(['bookings', dateStr, debounced, status], listBookings, {
-    search: debounced || undefined,
-    status: status || undefined,
-    date: dateStr,
+  const { data: areas = [] } = useQuery({
+    queryKey: ['lookup-areas', selectedBuilding?.id],
+    queryFn: () => lookupParkingAreas(selectedBuilding?.id),
+  });
+  const areaOptions = [{ label: 'All areas', value: 0 }, ...areas.map((a) => ({ label: a.name, value: a.id }))];
+
+  const {
+    data: groups = [],
+    isError,
+    error,
+    refetch,
+    isRefetching,
+  } = useQuery({
+    queryKey: ['bookings-by-space', dateStr, debounced, status, selectedBuilding?.id, areaId],
+    queryFn: () => listBookingsBySpace({
+      date: dateStr,
+      status: (status || undefined) as SpaceStatus | undefined,
+      building_id: selectedBuilding?.id,
+      parking_area_id: areaId || undefined,
+      search: debounced || undefined,
+    }),
   });
 
-  const count = list.items.length;
-  const availableW = screenWidth - TIMELINE_W;
-  const colW = count > 0 && count * COLUMN_W < availableW
+  const sortedGroups = [...groups].sort((a, b) =>
+    a.space_code.localeCompare(b.space_code, undefined, { numeric: true, sensitivity: 'base' }),
+  );
+  const totalBookings = groups.reduce((sum, g) => sum + g.bookings.length, 0);
+  const count = sortedGroups.length;
+  const availableW = screenWidth - TIME_COL_W;
+  const colW = count > 0 && count * CELL_W < availableW
     ? Math.floor(availableW / count)
-    : COLUMN_W;
+    : CELL_W;
 
   const goToDate = (d: Date) => {
     setSelectedDate(d);
-    const isToday = toISODate(d) === toISODate(new Date());
-    const offset = isToday
-      ? Math.max((new Date().getHours() - 1) * HOUR_H, 0)
-      : 8 * HOUR_H; // 8 AM for other days
+    const isTargetToday = toISODate(d) === toISODate(new Date());
+    const offset = isTargetToday
+      ? Math.max((new Date().getHours() - 1) * ROW_H, 0)
+      : 8 * ROW_H; // 8 AM for other days
     setTimeout(() => vScrollRef.current?.scrollTo({ y: offset, animated: false }), 150);
+  };
+
+  const openDatePicker = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: selectedDate,
+        mode: 'date',
+        onChange: (_, picked) => { if (picked) goToDate(picked); },
+      });
+    } else {
+      setDraftDate(selectedDate);
+      setIosDateOpen(true);
+    }
   };
 
   // Scroll to 1 hour before now on mount
   useEffect(() => {
-    const offset = Math.max((new Date().getHours() - 1) * HOUR_H, 0);
+    const offset = Math.max((new Date().getHours() - 1) * ROW_H, 0);
     const t = setTimeout(() => vScrollRef.current?.scrollTo({ y: offset, animated: false }), 150);
     return () => clearTimeout(t);
   }, []);
@@ -218,11 +354,11 @@ export default function BookingsScreen() {
   return (
     <Screen
       title="Bookings"
-      subtitle={list.total ? `${list.total} total` : undefined}
+      subtitle={count ? `${count} spaces · ${totalBookings} booking${totalBookings === 1 ? '' : 's'}` : undefined}
       headerRight={
         <View style={styles.headerActions}>
           <View>
-            <IconButton name="filter" accessibilityLabel="Filter bookings" surface onPress={openFilter} />
+            <IconButton name="filter" accessibilityLabel="Filter bookings" surface onPress={() => setShowFilter(true)} />
             {hasFilters && <View style={[styles.filterDot, { backgroundColor: theme.primary }]} />}
           </View>
           {can('operations.bookings', 'create') && (
@@ -242,9 +378,16 @@ export default function BookingsScreen() {
             <Text variant="subtitle" numberOfLines={1}>{formatNavDate(selectedDate)}</Text>
           </TouchableOpacity>
           <IconButton name="chevronRight" accessibilityLabel="Next day" onPress={() => goToDate(addDays(selectedDate, 1))} />
+          <IconButton name="bookings" accessibilityLabel="Choose date" onPress={openDatePicker} />
         </View>
 
-        {/* Fixed column headers — one per booking, scrolls horizontally in sync */}
+        <Legend />
+
+        {isError ? (
+          <Banner title="Couldn’t load bookings" message={error?.message} tone="danger" actionLabel="Retry" onAction={refetch} />
+        ) : null}
+
+        {/* Fixed column headers — one per parking space, scrolls horizontally in sync */}
         <View style={[styles.headRow, { borderBottomColor: theme.border }]}>
           <View style={[styles.timespacer, { borderRightColor: theme.borderStrong }]} />
           <ScrollView
@@ -253,81 +396,92 @@ export default function BookingsScreen() {
             scrollEnabled={false}
             showsHorizontalScrollIndicator={false}>
             <View style={{ flexDirection: 'row' }}>
-              {list.items.map((b) => <ColHeader key={b.id} booking={b} colW={colW} />)}
+              {sortedGroups.map((g) => <ColHeader key={g.parking_space_id} group={g} colW={colW} />)}
             </View>
           </ScrollView>
         </View>
 
         {/* Time grid — vertical scroll */}
-        <View style={{ flex: 1 }}>
-          <ScrollView
-            ref={vScrollRef}
-            style={styles.scroll}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl refreshing={list.isRefetching} onRefresh={list.refetch} tintColor={theme.primary} />
-            }>
-            <View style={{ flexDirection: 'row', height: GRID_H }}>
-              {/* Fixed time labels column — labels absolutely positioned ON the hour lines */}
-              <View style={[styles.timeline, { borderRightColor: theme.borderStrong }]}>
-                {HOURS.filter(h => h > 0).map((h) => (
-                  <Text
-                    key={h}
-                    variant="caption"
-                    color="textMuted"
-                    style={[styles.hourText, { top: h * HOUR_H - 8 }]}>
-                    {hourLabel(h)}
-                  </Text>
+        <ScrollView
+          ref={vScrollRef}
+          style={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.primary} />
+          }>
+          <View style={{ flexDirection: 'row' }}>
+            {/* Fixed time labels column */}
+            <View style={[styles.timeline, { borderRightColor: theme.borderStrong }]}>
+              {HOURS.map((h) => (
+                <View
+                  key={h}
+                  style={[
+                    styles.timeCell,
+                    { height: ROW_H, backgroundColor: isToday && h === nowHour ? theme.primarySoft : 'transparent' },
+                  ]}>
+                  <Text variant="caption" color="textMuted">{fullHourLabel(h)}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Space columns — horizontal scroll synced with header */}
+            <ScrollView
+              ref={bodyHRef}
+              horizontal
+              style={{ flex: 1 }}
+              onScroll={onBodyScroll}
+              scrollEventThrottle={16}
+              showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', minWidth: availableW }}>
+                {sortedGroups.map((g) => (
+                  <GridColumn
+                    key={g.parking_space_id}
+                    group={g}
+                    colW={colW}
+                    selectedDate={selectedDate}
+                    isToday={isToday}
+                    nowHour={nowHour}
+                    onPressBooking={(booking) => router.push(`/bookings/${booking.id}`)}
+                  />
                 ))}
               </View>
-
-              {/* Booking columns — horizontal scroll synced with header */}
-              <ScrollView
-                ref={bodyHRef}
-                horizontal
-                style={{ flex: 1 }}
-                onScroll={onBodyScroll}
-                scrollEventThrottle={16}
-                showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: 'row', height: GRID_H, minWidth: availableW }}>
-                  {/* Hour + half-hour lines covering full width */}
-                  <View style={[StyleSheet.absoluteFill, { width: Math.max(colW * count, availableW) }]} pointerEvents="none">
-                    {HOURS.map((h) => (
-                      <View key={h} style={[styles.hLine, { top: h * HOUR_H, borderColor: theme.borderStrong }]} />
-                    ))}
-                    {HOURS.map((h) => (
-                      <View key={`hf-${h}`} style={[styles.hLineHalf, { top: h * HOUR_H + HOUR_H / 2, borderColor: theme.borderStrong }]} />
-                    ))}
-                    <NowLine />
-                  </View>
-
-                  {/* One column per booking */}
-                  {list.items.map((b) => (
-                    <View key={b.id} style={[styles.colContainer, { width: colW, borderRightColor: theme.borderStrong }]}>
-                      <ColEvent booking={b} onPress={() => router.push(`/bookings/${b.id}`)} />
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-          </ScrollView>
-
-        </View>
+            </ScrollView>
+          </View>
+        </ScrollView>
       </View>
 
-      {/* Filter bottom sheet */}
-      <Modal visible={showFilter} animationType="none" transparent onRequestClose={closeFilter}>
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          <Animated.View style={[StyleSheet.absoluteFill, styles.backdropFill, { opacity: fadeAnim }]}>
-            <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={closeFilter} />
-          </Animated.View>
-          <Animated.View style={[styles.sheet, { backgroundColor: theme.surface, transform: [{ translateY: slideAnim }] }]}>
-            <View style={[styles.sheetHandle, { backgroundColor: theme.border }]} />
-            <SearchBar value={search} onChangeText={setSearch} placeholder="Search plate, ref, contact…" />
-            <Segmented scrollable options={FILTERS as never} value={status} onChange={setStatus} />
-          </Animated.View>
-        </View>
-      </Modal>
+      <FilterSheet visible={showFilter} onClose={() => setShowFilter(false)} title="Filter bookings">
+        <SearchBar value={search} onChangeText={setSearch} placeholder="Search plate, ref, contact…" />
+        <Select value={areaId ?? 0} options={areaOptions} onChange={(v) => setAreaId((v as number) || null)} placeholder="All areas" />
+        <Segmented scrollable options={FILTERS as never} value={status} onChange={setStatus} />
+      </FilterSheet>
+
+      {Platform.OS === 'ios' ? (
+        <Modal visible={iosDateOpen} transparent animationType="fade" onRequestClose={() => setIosDateOpen(false)}>
+          <View style={[styles.scrim, { backgroundColor: theme.scrim }]}>
+            <Pressable style={styles.backdrop} onPress={() => setIosDateOpen(false)} />
+            <View style={[styles.sheet, { backgroundColor: theme.surface, paddingBottom: Spacing.lg + insets.bottom }]}>
+              <DateTimePicker
+                value={draftDate}
+                mode="date"
+                display="spinner"
+                onChange={(_, d) => d && setDraftDate(d)}
+                themeVariant={scheme}
+                style={styles.picker}
+              />
+              <Button
+                title="Confirm"
+                icon="check"
+                onPress={() => {
+                  goToDate(draftDate);
+                  setIosDateOpen(false);
+                }}
+                fullWidth
+              />
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </Screen>
   );
 }
@@ -347,27 +501,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 
-  // Filter bottom sheet
-  backdropFill: { backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: Radius.lg,
-    borderTopRightRadius: Radius.lg,
-    padding: Spacing.md,
-    paddingBottom: Spacing.xxl,
-    gap: Spacing.sm,
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: Spacing.xs,
-  },
-
   // Date navigation
   dateNav: {
     flexDirection: 'row',
@@ -382,92 +515,68 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 
+  // Legend
+  legend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 3 },
+
   // Header row (fixed)
   headRow: {
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   timespacer: {
-    width: TIMELINE_W,
+    width: TIME_COL_W,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
   colHead: {
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: Spacing.sm,
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: 2,
-    gap: 1,
+    alignItems: 'center',
   },
 
   // Scrollable grid
   scroll: { flex: 1 },
   timeline: {
-    width: TIMELINE_W,
+    width: TIME_COL_W,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
-  hourText: {
-    position: 'absolute',
-    right: Spacing.sm,
-    fontSize: 11,
-    fontWeight: '600',
+  timeCell: {
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingRight: Spacing.sm,
   },
 
-  // Booking column
-  colContainer: {
-    width: COLUMN_W,
-    height: GRID_H,
-    position: 'relative',
+  // Column background hour rows
+  gridColumn: {
     borderRightWidth: StyleSheet.hairlineWidth,
   },
-  colEvent: {
+  gridRowBg: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+
+  // Booking block overlaid on a column — inset card, translucent fill, left accent bar
+  block: {
     position: 'absolute',
-    left: 3,
-    right: 3,
+    paddingHorizontal: 6,
+    paddingVertical: BLOCK_V_PADDING,
     borderRadius: Radius.sm,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    paddingVertical: 4,
-    overflow: 'hidden',
+    justifyContent: 'center',
   },
-  colEventBar: {
-    width: BAR_W,
-    alignSelf: 'stretch',
-    marginRight: 4,
-  },
-  colEventBody: {
-    flex: 1,
-    gap: 1,
-    overflow: 'hidden',
-  },
-  colEventTime: {
-    fontWeight: '600',
+  blockLine: {
+    fontSize: 9,
+    lineHeight: BLOCK_LINE_H,
   },
 
-  // Hour lines
-  hLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    borderTopWidth: 1,
-  },
-  hLineHalf: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    opacity: 0.6,
-  },
-
-  // Now line
-  nowLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  nowDot: { width: 8, height: 8, borderRadius: 4 },
-  nowBar: { flex: 1, height: 2 },
+  // Date picker sheet (iOS)
+  scrim: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  sheet: { padding: Spacing.lg, gap: Spacing.md, borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg },
+  picker: { width: '100%', height: 216 },
 });

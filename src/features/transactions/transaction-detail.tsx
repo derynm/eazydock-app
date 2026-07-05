@@ -4,8 +4,10 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { toApiError } from '@/api/client';
 import { lookupParkingSpaces } from '@/api/lookups';
-import { cancelTransaction, changeSpace, checkOut, getTransaction } from '@/api/transactions';
+import { cancelTransaction, changeSpace, checkOut, getTransaction, markOverstay } from '@/api/transactions';
+import { markOverstaySchema, type MarkOverstayForm } from '@/api/schemas';
 import { Badge, Button, Card, Divider, EmptyState, KeyValue, Section, Select, Skeleton, Text, TextField } from '@/components/ui';
+import { zodResolver } from '@/lib/zod-resolver';
 import { FormSheet } from '@/components/form-sheet';
 import { Radius, Spacing } from '@/constants/theme';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -13,6 +15,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 import { durationSince, formatDateTime, formatDuration, formatPlate, timeAgo, titleCase } from '@/lib/format';
 import { ENTRY_METHODS } from '@/lib/options';
+import { useForm, Controller } from 'react-hook-form';
 import { transactionStatusMeta } from '@/lib/status';
 
 export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: () => void }) {
@@ -21,6 +24,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
   const { can } = usePermissions();
   const [checkingOut, setCheckingOut] = useState(false);
   const [movingSpace, setMovingSpace] = useState(false);
+  const [markingOverstay, setMarkingOverstay] = useState(false);
 
   const { data: txn, isLoading, isError, error } = useQuery({ queryKey: ['transaction', id], queryFn: () => getTransaction(id) });
 
@@ -48,6 +52,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
   const isActive = txn.status === 'active' || txn.status === 'overstay';
   const canUpdate = can('operations.transactions', 'update');
   const canCancel = can('operations.transactions', 'delete');
+  const canMarkOverstay = can('operations.incidents', 'create') && txn.status === 'active';
 
   return (
     <>
@@ -70,10 +75,11 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
           </Text>
         </Card>
 
-        {isActive && (canUpdate || canCancel) ? (
+        {isActive && (canUpdate || canCancel || canMarkOverstay) ? (
           <View style={styles.actions}>
             {canUpdate ? <Button title="Check out" icon="carOut" onPress={() => setCheckingOut(true)} style={styles.flex} /> : null}
             {canUpdate ? <Button title="Move bay" icon="swap" variant="secondary" onPress={() => setMovingSpace(true)} style={styles.flex} /> : null}
+            {canMarkOverstay ? <Button title="Mark overstay" icon="warning" variant="secondary" onPress={() => setMarkingOverstay(true)} style={styles.flex} /> : null}
           </View>
         ) : null}
 
@@ -161,6 +167,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
 
       <CheckOutModal visible={checkingOut} txnId={txn.id} onClose={() => setCheckingOut(false)} onDone={invalidate} />
       <ChangeSpaceModal visible={movingSpace} txnId={txn.id} areaId={txn.parking_area_id} onClose={() => setMovingSpace(false)} onDone={invalidate} />
+      <MarkOverstayModal visible={markingOverstay} txnId={txn.id} onClose={() => setMarkingOverstay(false)} onDone={invalidate} />
     </>
   );
 }
@@ -183,6 +190,52 @@ function CheckOutModal({ visible, txnId, onClose, onDone }: { visible: boolean; 
     <FormSheet visible={visible} onClose={onClose} title="Check out vehicle" onSubmit={() => mutation.mutate()} submitting={mutation.isPending} submitLabel="Check out" error={error}>
       <Select label="Exit method" required value={method} options={ENTRY_METHODS} onChange={setMethod} />
       <TextField label="Comments" placeholder="Optional" multiline value={comments} onChangeText={setComments} style={{ minHeight: 80, textAlignVertical: 'top' }} />
+    </FormSheet>
+  );
+}
+
+function MarkOverstayModal({ visible, txnId, onClose, onDone }: { visible: boolean; txnId: number; onClose: () => void; onDone: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const { control, handleSubmit, reset } = useForm<MarkOverstayForm>({
+    resolver: zodResolver(markOverstaySchema),
+    defaultValues: { description: '' },
+  });
+
+  const mutation = useMutation({
+    mutationFn: (v: MarkOverstayForm) => markOverstay(txnId, v.description),
+    onSuccess: () => {
+      reset();
+      onClose();
+      onDone();
+    },
+    onError: (e) => setError(toApiError(e).message),
+  });
+
+  return (
+    <FormSheet
+      visible={visible}
+      onClose={() => { reset(); onClose(); }}
+      title="Mark as overstay"
+      onSubmit={handleSubmit((v) => mutation.mutate(v))}
+      submitting={mutation.isPending}
+      submitLabel="Mark overstay"
+      error={error}>
+      <Controller
+        control={control}
+        name="description"
+        render={({ field, fieldState }) => (
+          <TextField
+            label="Description"
+            required
+            multiline
+            placeholder="Describe why this is an overstay…"
+            value={field.value}
+            onChangeText={field.onChange}
+            error={fieldState.error?.message}
+            style={{ minHeight: 80, textAlignVertical: 'top' }}
+          />
+        )}
+      />
     </FormSheet>
   );
 }

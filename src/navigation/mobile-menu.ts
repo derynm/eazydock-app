@@ -30,6 +30,7 @@ export const MOBILE_MENU: MenuGroup[] = [
     items: [
       { key: 'transactions', label: 'Transactions', route: '/transactions', icon: 'transactions', slug: 'operations.transactions' },
       { key: 'bookings', label: 'Bookings', route: '/bookings', icon: 'bookings', slug: 'operations.bookings' },
+      { key: 'incidents', label: 'Incidents', route: '/incidents', icon: 'incident', slug: 'operations.incidents' },
     ],
   },
   {
@@ -43,7 +44,20 @@ export const MOBILE_MENU: MenuGroup[] = [
   {
     key: 'locations',
     title: 'Locations',
-    items: [{ key: 'tenants', label: 'Tenants', route: '/tenants', icon: 'tenants', slug: 'locations.tenants' }],
+    items: [
+      { key: 'tenants', label: 'Tenants', route: '/tenants', icon: 'tenants', slug: 'locations.tenants' },
+      { key: 'buildings', label: 'Buildings', route: '/buildings', icon: 'buildings', slug: 'locations.buildings' },
+      { key: 'parking-areas', label: 'Parking Areas', route: '/parking-areas', icon: 'parkingArea', slug: 'locations.parking_areas' },
+      { key: 'parking-spaces', label: 'Parking Spaces', route: '/parking-spaces', icon: 'parkingSpace', slug: 'locations.spaces' },
+      { key: 'allocations', label: 'Allocations', route: '/allocations', icon: 'allocation', slug: 'locations.allocations' },
+    ],
+  },
+  {
+    key: 'administration',
+    title: 'Administration',
+    items: [
+      { key: 'users', label: 'Users', route: '/users', icon: 'user', slug: 'administration.users' },
+    ],
   },
 ];
 

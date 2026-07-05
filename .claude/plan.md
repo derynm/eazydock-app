@@ -223,7 +223,7 @@ the same `menu.access` slugs the backend enforces (`routes/admin.php`).
 | | Allocations | `locations.allocations` | 2 |
 | **Reports** | Occupancy / utilisation / overstay / history… | `reports.*` | 3 |
 | | Activity logs | `administration.activity_logs` | 3 |
-| **Administration** | Users | `administration.users` | 4 |
+| **Administration** | Users | `administration.users` | 2 (pulled forward) |
 | | Roles & permissions | `administration.roles`, `administration.role_permissions` | 4 |
 | | Menus | `administration.menu_management` | 4 |
 | | Companies | `administration.companies` | 4 |
@@ -426,7 +426,7 @@ Duplicate (same driver+vehicle) → `422 errors.driver_id`. **Resource:**
 
 | Method · Path | Action | Notes |
 |---|---|---|
-| `GET /admin/transactions?search=&status=&parking_area_id=&page=` | view | all transactions |
+| `GET /admin/transactions?search=&status=&building_id=&tenant_id=&parking_area_id=&page=` | view | all transactions |
 | `GET /admin/transactions/active-vehicles?search=&parking_area_id=&driver_type=&page=` | view | active only (area-restricted for non-admins) |
 | `GET /admin/transactions/vehicle-search?q=` | view | type-ahead: `{ vehicles: [{ id, car_id, plate_number }] }` (q ≥ 1) |
 | `GET /admin/transactions/driver-search?q=` | view | `{ drivers: [{ id, full_name, phone, email, company_name }] }` |
@@ -487,6 +487,7 @@ session; if unknown, everything is `null` and the app fills the form manually.
 | Method · Path | Action | Body / notes |
 |---|---|---|
 | `GET /admin/bookings?search=&status=&parking_area_id=&date_from=&date_to=&page=` | view | `date_from` / `date_to` are `YYYY-MM-DD`; filter on `starts_at` |
+| `GET /admin/bookings/by-space?date=&building_id=&parking_area_id=&status=&search=` | view | **not paginated** — every space in scope for that day (**including spaces with zero bookings**), each with a derived `status`. Powers a per-space day board. |
 | `GET /admin/bookings/form-data` | view | `{ buildings, areas, spaces, tenants, drivers }` pickers |
 | `POST /admin/bookings` | create | booking fields ↓ → 201 |
 | `GET /admin/bookings/{id}` | view | — |
@@ -494,6 +495,35 @@ session; if unknown, everything is `null` and the app fills the form manually.
 | `POST /admin/bookings/{id}/fulfil` | update | `{ entry_method* (enum), comments? }` → **201** (returns the created **transaction**) |
 | `POST /admin/bookings/{id}/cancel` | update | — |
 | `DELETE /admin/bookings/{id}` | delete | — |
+
+**`by-space` day board.** Returns **every** parking space in scope for `date`
+(filtered by `building_id`/`parking_area_id` like any other space list) — not
+just spaces that happen to have a booking. Each row carries a derived
+`status`, in this priority order:
+1. **`occupied`** — the space's live `occupancy_status` is `occupied` (a
+   vehicle is physically parked there right now). This is always **real-time**
+   — there's no historical/future occupancy record, so for a `date` other
+   than today this only reflects what's true *right now*, not what will be
+   true on that date.
+2. **`booked`** — not currently occupied, but has an active (`pending`/
+   `confirmed`) booking covering `date`.
+3. **`available`** — neither of the above.
+
+`?status=available|booked|occupied` filters the returned rows to just that
+status. `?search=` still narrows which bookings appear in each row's
+`bookings[]` array (matching `booking_no`/plate/`contact_name`), but does
+**not** hide a space or change its computed `status` — a space's `status` is
+independent of the search term.
+```jsonc
+// GET /admin/bookings/by-space?date=2026-07-10&parking_area_id=4
+{
+  "data": [
+    { "parking_space_id": 12, "space_code": "A-01", "status": "occupied", "bookings": [] },
+    { "parking_space_id": 13, "space_code": "A-02", "status": "booked", "bookings": [ /* ParkingBookingResource[] */ ] },
+    { "parking_space_id": 14, "space_code": "A-03", "status": "available", "bookings": [] }
+  ]
+}
+```
 
 **Booking fields / rules:** `building_id`* · `parking_area_id`* ·
 `parking_space_id`* (operational) · `tenant_id` · `vehicle_id` · `driver_type`*
@@ -505,9 +535,209 @@ session; if unknown, everything is `null` and the app fills the form manually.
 When both are supplied, `driver_id` takes precedence. The driver is linked to an
 existing `vehicle_id` immediately, or to the vehicle created/resolved when the
 booking is fulfilled. Overlapping the same bay/time →
-`422 errors.parking_space_id`.
+`422 errors.parking_space_id`. **Immediate bookings on an occupied space are
+also rejected:** if `starts_at` is now or in the past *and* the space's live
+`occupancy_status` isn't `available` → `422 errors.parking_space_id`
+("This space is currently occupied and cannot be booked to start
+immediately."). Future-dated bookings are **not** checked against current
+occupancy (only against other bookings' time windows) — the space may well be
+vacated by then; occupancy is re-checked for real at fulfil time.
 **Resource:** `{ id, booking_no, status, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, driver_type, plate_number_raw, contact_name, contact_phone, starts_at, ends_at, notes, parking_transaction_id, created_at, + building, parking_area, parking_space, tenant, driver? }`.
 `driver` (when linked): `{ id, full_name, phone, email, company_name }`.
+
+---
+
+## 6B. Phase 2 screens (detail)
+
+| Screen | Reads | Writes / actions |
+|---|---|---|
+| **Buildings** | `GET /admin/buildings?search=&page=` | create / edit / delete |
+| **Parking areas** | `GET /admin/parking-areas?search=&building_id=&page=` | create / edit / delete — **no assignments editor at all** (see decision below) |
+| **Parking spaces** | `GET /admin/parking-spaces?search=&parking_area_id=&space_type=&operational_status=&page=` | create / edit / delete; **bulk-create** (`prefix` + `start_number` + `count`) |
+| **Occupancy grid** | `GET /admin/parking-spaces/occupancy-grid?building_id=&parking_area_id=&occupancy_status=&operational_status=` | read-only grid view + summary counts (available/occupied/maintenance/blocked/inactive) — no pagination, no writes |
+| **Allocations** | `GET /admin/parking-allocations?building_id=&tenant_id=&allocation_type=&status=&page=` | create / edit / delete |
+| **Incidents** | `GET /admin/parking-incidents?status=&incident_type=&page=` | create / edit — **no delete** (matches the backend; once reported an incident is only ever updated to `resolved`/`cancelled`) |
+| **Transaction detail (existing Phase 1 screen)** | — | new **"Mark overstay"** action → `POST /admin/transactions/{id}/mark-overstay` |
+| **Users** *(pulled forward from Phase 4)* | `GET /admin/users?search=&page=` | create / edit / remove-from-company (`DELETE` only unlinks the user from the active company — the account itself isn't deleted); see §6D for the full, non-trivial contract |
+
+**Decision: no parking-area-user assignment management in the app.** There is
+**no** Parking-area users screen and **no** inline assignments editor on the
+Parking area form. A standalone `/parking-area-users` API + web screen was
+built during Phase 2 (mirroring an existing but unlinked web feature — a
+company-wide cross-area assignment list), then **removed from both web and
+API** as unneeded: the underlying `ParkingAreaUser` assignments still exist and
+are still used for `parking.area.access` restrictions on transaction writes,
+but they're managed only via the web's inline "Area Assignments" panel on the
+Parking Area edit form — a flow the mobile app does not need to replicate for
+Phase 2. If assignment management is wanted on mobile later, that's a fresh
+scoping decision, not a resurrection of the removed screen.
+
+- Forms use the same `react-hook-form` + `zod` pattern as Phase 1, mirroring the
+  enums/rules below.
+- `SearchSelect` pickers reuse `lookups/buildings`, `lookups/parking-areas?building_id=`
+  for the Parking area / Parking space / Allocation forms.
+- The Incidents "resolve" action is just `PUT .../{id}` with `status: 'resolved'`;
+  the app does not send `resolved_by`/`resolved_at` — the backend sets both
+  server-side on that transition.
+- "Mark overstay" only appears on an **active** transaction; submitting on a
+  non-active one returns `422 { errors: { transaction: [...] } }`.
+
+---
+
+## 6C. API reference (Phase 2 — all live ✅)
+
+All endpoints below are **built, tested and committed**. Same conventions as
+§6A (base URL, headers, token, list envelope, error shapes) — all Phase 2
+routes sit under `/admin` and need both `Authorization` and `X-Company-Id`.
+
+### Buildings  (`locations.buildings`)
+
+| Method · Path | Action |
+|---|---|
+| `GET /admin/buildings?search=&page=` · `POST` · `GET/PUT/DELETE /{id}` | full CRUD |
+
+**Fields / rules:** `name`* (max 150), `code` (max 50, unique per company),
+`building_type` (max 50), `contact_name` (150), `contact_phone` (50),
+`contact_email` (email, 150), `address_line_1`* (255), `address_line_2` (255),
+`suburb` (100), `state` (100), `postal_code` (30), `country` (100),
+`latitude`/`longitude` (numeric), `status`* (`active|inactive`).
+**Resource:** `{ id, name, code, building_type, contact_name, contact_phone, contact_email, address_line_1, address_line_2, suburb, state, postal_code, country, latitude, longitude, status, created_at, updated_at }`.
+
+### Parking areas  (`locations.parking_areas`)
+
+| Method · Path | Action |
+|---|---|
+| `GET /admin/parking-areas?search=&building_id=&page=` · `POST` · `GET/PUT/DELETE /{id}` | full CRUD — **no assignment management at all** (see §6B decision; `/parking-area-users` does not exist as an API) |
+
+**Fields / rules:** `building_id`* (must be in company), `name`* (max 150),
+`code` (max 50), `level` (max 50), `area_type`*
+(`standard|visitor|loading|contractor|mixed`), `capacity`* (int, min 0),
+`status`* (`active|inactive|maintenance`), `notes`.
+**Resource:** `{ id, building_id, name, code, level, area_type, capacity, status, notes, created_at, updated_at, building?: { id, name } }`.
+
+### Parking spaces  (`locations.spaces`)
+
+| Method · Path | Action | Notes |
+|---|---|---|
+| `GET /admin/parking-spaces?search=&parking_area_id=&space_type=&operational_status=&page=` | view | page size **50** (not 20) |
+| `GET /admin/parking-spaces/occupancy-grid?building_id=&parking_area_id=&occupancy_status=&operational_status=` | view | **not paginated** — full result set + summary |
+| `POST /admin/parking-spaces` | create | `building_id` is derived server-side from `parking_area_id` — don't send it |
+| `POST /admin/parking-spaces/bulk` | create | `{ parking_area_id*, prefix*, start_number* (int min 1), count* (int min 1, max 500), space_type*, default_usage*, operational_status* }` → `{ created, skipped }` (skips codes that already exist in that area) |
+| `GET/PUT/DELETE /admin/parking-spaces/{id}` | view/update/delete | — |
+
+**Fields / rules (store/update):** `parking_area_id`* (in company),
+`space_code`* (max 80, unique **within that parking area**), `space_type`*
+(`standard|accessible|ev|motorcycle|loading|visitor`), `default_usage`*
+(`building_owner|tenant|contractor|visitor|delivery|flexible`),
+`operational_status`* (`active|inactive|maintenance|blocked`), `notes`.
+**Resource:** `{ id, building_id, parking_area_id, space_code, space_type, default_usage, operational_status, occupancy_status, current_transaction_id, current_vehicle_id, occupied_since, sort_order, notes, created_at, updated_at, building?, parking_area?, current_transaction?: { id, transaction_no, car_in_at, status } | null, current_vehicle?: { id, plate_number } | null }`.
+
+**Occupancy grid response shape:**
+```jsonc
+// GET /admin/parking-spaces/occupancy-grid
+{
+  "spaces": { "data": [ /* ParkingSpaceResource[], with building/parking_area/current_transaction/current_vehicle loaded */ ] },
+  "areas": [ { "id": 1, "building_id": 2, "name": "Basement B1" } ],   // areas present in the result, for the filter picker
+  "buildings": [ { "id": 2, "name": "Tower A" } ],                     // buildings present in the result
+  "summary": { "total": 40, "available": 25, "occupied": 15, "active": 38, "maintenance": 1, "blocked": 1, "inactive": 0 }
+}
+```
+
+### Parking allocations  (`locations.allocations`)
+
+| Method · Path | Action |
+|---|---|
+| `GET /admin/parking-allocations?building_id=&tenant_id=&allocation_type=&status=&page=` · `POST` · `GET/PUT/DELETE /{id}` | full CRUD |
+
+**Fields / rules:** `building_id`* (in company), `tenant_id` (nullable, in
+company), `parking_area_id` (nullable, in company), `allocation_type`*
+(`flexible_quota|temporary_quota|visitor_quota|loading_quota`), `user_category`*
+(`building_owner|tenant|contractor|visitor|delivery`), `quota`* (int, min 1),
+`release_after_minutes` (int, min 1), `starts_at` (date), `ends_at` (date,
+`after_or_equal:starts_at`), `status`* (`active|inactive|expired`), `notes`.
+**Note:** `starts_at`/`ends_at` are normalised server-side to start-of-day /
+end-of-day — send plain `YYYY-MM-DD` dates, the time component you send is
+discarded.
+**Resource:** `{ id, building_id, tenant_id, parking_area_id, allocation_type, user_category, quota, release_after_minutes, starts_at, ends_at, status, notes, created_at, updated_at, building?, tenant?, parking_area? }` (relation keys are `null` when not set, not omitted).
+
+### Parking incidents  (`operations.incidents`) — CRU only, no delete
+
+| Method · Path | Action | Body |
+|---|---|---|
+| `GET /admin/parking-incidents?status=&incident_type=&page=` | view | — |
+| `POST /admin/parking-incidents` | create | `{ parking_transaction_id?, parking_space_id?, incident_type* (damage\|unauthorised_vehicle\|overstay\|blocked_space\|safety\|other), description* }` → 201 |
+| `GET /admin/parking-incidents/{id}` | view | — |
+| `PUT /admin/parking-incidents/{id}` | update | `{ incident_type*, description*, status* (open\|resolved\|cancelled) }` |
+
+`reported_by` is set server-side from the authed user on create.
+Transitioning `status` to `resolved` sets `resolved_by`/`resolved_at`
+server-side — don't send them.
+**Resource:** `{ id, parking_transaction_id, parking_space_id, incident_type, description, status, reported_by, resolved_by, resolved_at, created_at, updated_at, parking_transaction?: { id, transaction_no } | null, parking_space?: { id, space_code } | null, reporter?: { id, name } | null }`.
+
+### Mark overstay  (`operations.incidents,create` + area access) — on transactions
+
+| Method · Path | Body |
+|---|---|
+| `POST /admin/transactions/{id}/mark-overstay` | `{ description* (max 1000) }` → **201**, returns the created incident (`ParkingIncidentResource`) |
+
+Only valid for an **active** transaction — otherwise `422 errors.transaction`
+("Overstay can only be logged for an active transaction."). Same
+`parking.area.access` restriction as check-out/change-space/cancel (non-admins
+need an active `ParkingAreaUser` assignment for that transaction's area).
+
+---
+
+## 6D. Users (`administration.users`) — pulled forward from Phase 4
+
+Users are **not** plain CRUD like the rest of Phase 2 — a "user" spans two
+models (`User` + one `CompanyUser` pivot per company) with super-admin
+branching. Read this before building the screen.
+
+| Method · Path | Action | Body |
+|---|---|---|
+| `GET /admin/users?search=&page=` | view | — |
+| `POST /admin/users` | create | `{ name*, email* (unique), password* (min 8), role_id*, company_id?, status* (active\|inactive) }` → 201 |
+| `GET /admin/users/{id}` | view | — |
+| `PUT /admin/users/{id}` | update | `{ name*, email* (unique, ignoring self), role_id*, company_id?, status* }` — **no `password` field, there is no change-password flow on this screen** |
+| `DELETE /admin/users/{id}` | delete | — **removes the user from the active company only** (deletes the `CompanyUser` pivot row); the `User` account itself is never deleted |
+| `GET /admin/lookups/roles` | — | picker: assignable roles for the acting user (see below) — no menu gate |
+
+**How `company_id` / `role_id` resolve (same for create and update):**
+- **Non-super-admin:** always forced onto their own active company —
+  whatever `company_id` you send is ignored.
+- **Super admin:** may send an explicit `company_id` (any active company —
+  pick it from `GET /companies`), or omit it.
+- **Either way:** if the selected `role_id`'s role has `slug === 'super_admin'`,
+  the server **forces `company_id` to `null`** (a global super-admin user)
+  regardless of what was submitted.
+- If, after the above, there is still no target company for a **non**-`super_admin`
+  role → `422 { errors: { company_id: [...] } }`.
+- If the selected role doesn't belong to the target company (a `scope: 'company'`
+  role from a different company) → `422 { errors: { role_id: [...] } }`.
+- `GET /admin/lookups/roles` returns only the roles actually assignable given
+  the caller's admin/super-admin status and active company — **populate the
+  role picker from this endpoint so the client never offers an invalid
+  combination**; still handle the two 422 shapes above defensively.
+
+**Resource:** `{ id, name, email, created_at, updated_at, company_users: [{ id, company_id, role_id, status, role: { id, name, slug } }] }`.
+`company_users` is normally a single-element array — the one pivot row for
+the company you're viewing as. A super admin viewing/editing a user may see
+more than one row (that user's memberships across companies); when building
+the edit form, use `company_users[0]` (matching the web dashboard's own
+convention) unless you need to disambiguate.
+
+**Roles lookup response:** `{ roles: [{ id, name, slug, scope, company_id }] }`
+— `scope: 'system'` roles (e.g. `admin`, `manager`, `supervisor`, `operation`,
+`employee`, `account`, and `super_admin` for super admins only) are always
+assignable; `scope: 'company'` roles are only included when they belong to
+the company you're currently creating/editing the user for.
+
+- Cross-company access (viewing/editing a user not linked to your active
+  company, as a non-super-admin) → `404`, not `403` (same divergence as every
+  other Phase 2 resource).
+- The Users form only exists in **Phase 2** for this screen's flat CRUD needs —
+  Roles/Role-Permissions/Menus management itself is still Phase 4; this screen
+  only needs a `role_id` picker, not a role editor.
 
 ---
 
@@ -531,16 +761,18 @@ Auth (login + logout, no 2FA), company switcher, dashboard, and the screens in �
 Transactions, Bookings, Drivers, Vehicles, Tenants. Manual plate entry, optional
 photo, **no OCR**.
 
-**Phase 2 — locations & people admin**
+**Phase 2 — locations & people admin — backend live ✅**
 Buildings, parking areas, parking spaces (+ occupancy grid), allocations,
-parking-area user assignments, incidents.
+incidents, **Users management (pulled forward from Phase 4)**. Full API
+contract in §6C/§6D.
 
 **Phase 3 — reports & oversight**
 Occupancy / tenant-utilisation / overstay / vehicle-history / space-history
 reports as mobile-friendly read views with export links; activity logs.
 
 **Phase 4 — administration**
-Users, roles, role-permissions, menus, companies, kiosk-device management.
+Roles, role-permissions, menus, companies, kiosk-device management. (Users
+moved to Phase 2.)
 
 **Phase 5 — OCR & camera**
 Capture the plate from the phone camera and auto-fill check-in (reuse the web
@@ -572,6 +804,35 @@ Capture the plate from the phone camera and auto-fill check-in (reuse the web
 Backend milestones B-M1..B-M3 in `docs/mobile-backend-plan.md` are **done and
 committed** (branch `feat/mobile-admin-api`) — the full Phase 1 API in §6A is
 live, so A-M1 → A-M4 are unblocked.
+
+---
+
+## 9A. Milestones (Phase 2)
+
+Backend milestones P2-M1/P2-M2/P2-M3 in `docs/mobile-backend-plan.md` are
+**done** — the full Phase 2 API in §6C/§6D is live, so the app-side milestones
+below are unblocked. Same "add an API module + a list/detail screen" pattern
+as Phase 1 for most of these; Users (A-M6) is the exception — see §6D.
+
+1. **A-M5 — Locations CRUD:** Buildings, Parking areas, Parking spaces (+
+   bulk-create + occupancy grid), Allocations screens, reusing
+   `ResponsiveListDetail` / `ListScreen`; add the four groups to `mobileMenu.ts`
+   under **Locations**.
+2. **A-M6 — Incidents & Users:** Incidents list/detail (create + resolve, no
+   delete); "Mark overstay" action added to the existing Transaction detail
+   screen; add **Incidents** to the **Operations** menu group. (No
+   parking-area-user assignment screen — see §6B decision.) Users list/create/edit
+   screen per §6D — role picker sourced from `GET /admin/lookups/roles`,
+   company picker (super admin only) from `GET /companies`; handle the two
+   `422` shapes (`company_id`, `role_id`) as field-level errors like any other
+   form; "delete" button should read as **"Remove from company"**, not
+   "Delete user", to match what the API actually does. Add **Users** to the
+   **Administration** menu group (a new group, one item, pulled forward from
+   Phase 4).
+3. **A-M7 — Polish:** permission-gate every new screen/action via `can()`,
+   extend the error/offline matrix (§7) to the new endpoints, confirm the
+   occupancy grid renders sensibly on both phone (scrollable list) and tablet
+   (grid layout).
 
 ---
 

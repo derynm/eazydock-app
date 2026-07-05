@@ -11,7 +11,7 @@ import { storage, StorageKeys } from '@/lib/storage';
  * Keep localhost dev overrides in `.env.development.local` (never `.env.local`,
  * which Expo also loads in production).
  */
-const PRODUCTION_API_URL = 'https://eazydoc.eazycab.au/api';
+const PRODUCTION_API_URL = 'https://app.eazydock.com.au/api';
 const ENV_API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').trim();
 
 export const API_URL = ENV_API_URL || (__DEV__ ? '' : PRODUCTION_API_URL);

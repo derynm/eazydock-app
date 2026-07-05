@@ -28,6 +28,7 @@ import { usePaginatedList } from '@/hooks/use-paginated-list';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useResponsive } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { useSession } from '@/auth/session';
 import { confirm } from '@/lib/confirm';
 import { durationSince, formatDuration, formatPlate } from '@/lib/format';
 import { transactionStatusMeta } from '@/lib/status';
@@ -47,10 +48,11 @@ export default function TransactionsScreen() {
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const debounced = useDebouncedValue(search);
+  const { selectedBuilding } = useSession();
 
   const fetcher = scope === 'active' ? listActiveVehicles : listTransactions;
-  const baseKey = scope === 'active' ? ['active-vehicles'] : ['transactions'];
-  const list = usePaginatedList(baseKey, fetcher, { search: debounced });
+  const baseKey = scope === 'active' ? ['active-vehicles', selectedBuilding?.id] : ['transactions', selectedBuilding?.id];
+  const list = usePaginatedList(baseKey, fetcher, { search: debounced, building_id: selectedBuilding?.id });
   const handleCheckOut = async (transaction: Transaction) => {
     const ok = await confirm({
       title: 'Check out vehicle?',

@@ -32,6 +32,7 @@ type Props = {
   hideNoMatches?: boolean;
   onEndEditing?: () => void;
   onSubmitEditing?: () => void;
+  trailing?: React.ReactNode;
 };
 
 export function AutocompleteField({
@@ -44,6 +45,7 @@ export function AutocompleteField({
   hideNoMatches = false,
   onEndEditing,
   onSubmitEditing,
+  trailing,
   ...field
 }: Props) {
   const theme = useTheme();
@@ -69,6 +71,7 @@ export function AutocompleteField({
         onBlur={() => setTimeout(() => setFocused(false), 150)}
         onEndEditing={onEndEditing}
         onSubmitEditing={onSubmitEditing}
+        trailing={trailing}
       />
 
       {active && (isFetching || results.length > 0 || !hideNoMatches) ? (

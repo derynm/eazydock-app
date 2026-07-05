@@ -78,6 +78,92 @@ export const bookingSchema = z
   });
 export type BookingForm = z.infer<typeof bookingSchema>;
 
+/* ---- Phase 2 schemas ---- */
+
+export const buildingSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(150),
+  code: optionalString(50),
+  building_type: optionalString(50),
+  contact_name: optionalString(150),
+  contact_phone: optionalString(50),
+  contact_email: email,
+  address_line_1: z.string().min(1, 'Address is required').max(255),
+  address_line_2: optionalString(255),
+  suburb: optionalString(100),
+  state: optionalString(100),
+  postal_code: optionalString(30),
+  country: optionalString(100),
+  status: z.enum(['active', 'inactive']),
+});
+export type BuildingForm = z.infer<typeof buildingSchema>;
+
+export const parkingAreaSchema = z.object({
+  building_id: z.number({ message: 'Select a building' }).int().positive('Select a building'),
+  name: z.string().min(1, 'Name is required').max(150),
+  code: optionalString(50),
+  level: optionalString(50),
+  area_type: z.enum(['standard', 'visitor', 'loading', 'contractor', 'mixed']),
+  capacity: z.number({ message: 'Capacity is required' }).int().min(0, 'Capacity must be 0 or more'),
+  status: z.enum(['active', 'inactive', 'maintenance']),
+  notes: optionalString(2000),
+});
+export type ParkingAreaForm = z.infer<typeof parkingAreaSchema>;
+
+export const parkingSpaceSchema = z.object({
+  parking_area_id: z.number({ message: 'Select a parking area' }).int().positive('Select a parking area'),
+  space_code: z.string().min(1, 'Space code is required').max(80),
+  space_type: z.enum(['standard', 'accessible', 'ev', 'motorcycle', 'loading', 'visitor']),
+  default_usage: z.enum(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery', 'flexible']),
+  operational_status: z.enum(['active', 'inactive', 'maintenance', 'blocked']),
+  notes: optionalString(2000),
+});
+export type ParkingSpaceForm = z.infer<typeof parkingSpaceSchema>;
+
+export const bulkCreateSpacesSchema = z.object({
+  parking_area_id: z.number({ message: 'Select a parking area' }).int().positive('Select a parking area'),
+  prefix: z.string().min(1, 'Prefix is required'),
+  start_number: z.number({ message: 'Start number is required' }).int().min(1),
+  count: z.number({ message: 'Count is required' }).int().min(1).max(500, 'Max 500 spaces'),
+  space_type: z.enum(['standard', 'accessible', 'ev', 'motorcycle', 'loading', 'visitor']),
+  default_usage: z.enum(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery', 'flexible']),
+  operational_status: z.enum(['active', 'inactive', 'maintenance', 'blocked']),
+});
+export type BulkCreateSpacesForm = z.infer<typeof bulkCreateSpacesSchema>;
+
+export const allocationSchema = z
+  .object({
+    building_id: z.number({ message: 'Select a building' }).int().positive('Select a building'),
+    tenant_id: z.number().int().positive().nullable().optional(),
+    parking_area_id: z.number().int().positive().nullable().optional(),
+    allocation_type: z.enum(['flexible_quota', 'temporary_quota', 'visitor_quota', 'loading_quota']),
+    user_category: z.enum(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery']),
+    quota: z.number({ message: 'Quota is required' }).int().min(1, 'Quota must be at least 1'),
+    release_after_minutes: z.number().int().min(1).nullable().optional(),
+    starts_at: optionalString(20),
+    ends_at: optionalString(20),
+    status: z.enum(['active', 'inactive', 'expired']),
+    notes: optionalString(2000),
+  })
+  .refine(
+    (v) => !v.starts_at || !v.ends_at || new Date(v.ends_at) >= new Date(v.starts_at),
+    { message: 'End must be on or after start', path: ['ends_at'] },
+  );
+export type AllocationForm = z.infer<typeof allocationSchema>;
+
+export const incidentSchema = z.object({
+  parking_transaction_id: z.number().int().positive().nullable().optional(),
+  parking_space_id: z.number().int().positive().nullable().optional(),
+  incident_type: z.enum(['damage', 'unauthorised_vehicle', 'overstay', 'blocked_space', 'safety', 'other']),
+  description: z.string().min(1, 'Description is required').max(2000),
+  status: z.enum(['open', 'resolved', 'cancelled']).optional(),
+});
+export type IncidentForm = z.infer<typeof incidentSchema>;
+
+export const markOverstaySchema = z.object({
+  description: z.string().min(1, 'Description is required').max(1000),
+});
+export type MarkOverstayForm = z.infer<typeof markOverstaySchema>;
+
 export const checkInSchema = z.object({
   building_id: z.number().int().positive('Select a building'),
   parking_area_id: z.number().int().positive('Select a parking area'),
@@ -94,3 +180,22 @@ export const checkInSchema = z.object({
   comments: optionalString(2000),
 });
 export type CheckInForm = z.infer<typeof checkInSchema>;
+
+export const userCreateSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(150),
+  email: z.string().email('Enter a valid email').max(150),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  role_id: z.number({ message: 'Select a role' }).int().positive('Select a role'),
+  company_id: z.number().int().positive().nullable().optional(),
+  status: z.enum(['active', 'inactive']),
+});
+export type UserCreateForm = z.infer<typeof userCreateSchema>;
+
+export const userUpdateSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(150),
+  email: z.string().email('Enter a valid email').max(150),
+  role_id: z.number({ message: 'Select a role' }).int().positive('Select a role'),
+  company_id: z.number().int().positive().nullable().optional(),
+  status: z.enum(['active', 'inactive']),
+});
+export type UserUpdateForm = z.infer<typeof userUpdateSchema>;

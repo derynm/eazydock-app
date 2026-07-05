@@ -45,4 +45,6 @@ export const storage = {
 export const StorageKeys = {
   token: 'admin_token',
   companyId: 'active_company_id',
+  buildingId: 'selected_building_id',
+  buildingName: 'selected_building_name',
 } as const;

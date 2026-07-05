@@ -136,9 +136,12 @@ export type Transaction = {
   events?: TransactionEvent[];
 };
 
+export type SpaceStatus = 'occupied' | 'booked' | 'available';
+
 export type BookingsBySpaceGroup = {
-  parking_space_id: number | null;
-  space_code: string | null;
+  parking_space_id: number;
+  space_code: string;
+  status: SpaceStatus;
   bookings: Booking[];
 };
 
@@ -217,4 +220,146 @@ export type ListParams = {
   search?: string;
   status?: string;
   [key: string]: string | number | undefined;
+};
+
+/* ---- Phase 2 enums ---- */
+export type AreaType = 'standard' | 'visitor' | 'loading' | 'contractor' | 'mixed';
+export type SpaceType = 'standard' | 'accessible' | 'ev' | 'motorcycle' | 'loading' | 'visitor';
+export type SpaceDefaultUsage = 'building_owner' | 'tenant' | 'contractor' | 'visitor' | 'delivery' | 'flexible';
+export type SpaceOperationalStatus = 'active' | 'inactive' | 'maintenance' | 'blocked';
+export type AllocationType = 'flexible_quota' | 'temporary_quota' | 'visitor_quota' | 'loading_quota';
+export type UserCategory = 'building_owner' | 'tenant' | 'contractor' | 'visitor' | 'delivery';
+export type IncidentType = 'damage' | 'unauthorised_vehicle' | 'overstay' | 'blocked_space' | 'safety' | 'other';
+export type IncidentStatus = 'open' | 'resolved' | 'cancelled';
+export type AreaStatus = 'active' | 'inactive' | 'maintenance';
+
+/* ---- Phase 2 resources ---- */
+
+export type BuildingResource = {
+  id: number;
+  name: string;
+  code: string | null;
+  building_type: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  address_line_1: string;
+  address_line_2: string | null;
+  suburb: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  status: 'active' | 'inactive';
+  created_at: string;
+  updated_at: string;
+};
+
+export type ParkingAreaResource = {
+  id: number;
+  building_id: number;
+  name: string;
+  code: string | null;
+  level: string | null;
+  area_type: AreaType;
+  capacity: number;
+  status: AreaStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  building?: { id: number; name: string };
+};
+
+export type ParkingSpaceResource = {
+  id: number;
+  building_id: number;
+  parking_area_id: number;
+  space_code: string;
+  space_type: SpaceType;
+  default_usage: SpaceDefaultUsage;
+  operational_status: SpaceOperationalStatus;
+  occupancy_status: string;
+  current_transaction_id: number | null;
+  current_vehicle_id: number | null;
+  occupied_since: string | null;
+  sort_order: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  building?: { id: number; name: string };
+  parking_area?: { id: number; name: string };
+  current_transaction?: { id: number; transaction_no: string; car_in_at: string | null; status: string } | null;
+  current_vehicle?: { id: number; plate_number: string } | null;
+};
+
+export type OccupancyGridResponse = {
+  spaces: ParkingSpaceResource[];
+  areas: { id: number; building_id: number; name: string }[];
+  buildings: { id: number; name: string }[];
+  summary: { total: number; available: number; occupied: number; active: number; maintenance: number; blocked: number; inactive: number };
+};
+
+export type Allocation = {
+  id: number;
+  building_id: number;
+  tenant_id: number | null;
+  parking_area_id: number | null;
+  allocation_type: AllocationType;
+  user_category: UserCategory;
+  quota: number;
+  release_after_minutes: number | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: 'active' | 'inactive' | 'expired';
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  building?: { id: number; name: string };
+  tenant?: { id: number; name: string } | null;
+  parking_area?: { id: number; name: string } | null;
+};
+
+
+export type Incident = {
+  id: number;
+  parking_transaction_id: number | null;
+  parking_space_id: number | null;
+  incident_type: IncidentType;
+  description: string;
+  status: IncidentStatus;
+  reported_by: number;
+  resolved_by: number | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  parking_transaction?: { id: number; transaction_no: string } | null;
+  parking_space?: { id: number; space_code: string } | null;
+  reporter?: { id: number; name: string } | null;
+};
+
+/* ---- Users (§6D) ---- */
+export type RoleResource = {
+  id: number;
+  name: string;
+  slug: string;
+  scope: 'system' | 'company';
+  company_id: number | null;
+};
+
+export type CompanyUser = {
+  id: number;
+  company_id: number;
+  role_id: number;
+  status: 'active' | 'inactive';
+  role: { id: number; name: string; slug: string };
+};
+
+export type UserResource = {
+  id: number;
+  name: string;
+  email: string;
+  created_at: string;
+  updated_at: string;
+  company_users: CompanyUser[];
 };

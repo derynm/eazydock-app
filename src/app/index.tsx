@@ -5,7 +5,7 @@ import { useSession } from '@/auth/session';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function Index() {
-  const { status } = useSession();
+  const { status, selectedBuilding } = useSession();
   const theme = useTheme();
 
   if (status === 'loading') {
@@ -16,7 +16,10 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={status === 'authed' ? '/dashboard' : '/login'} />;
+  if (status === 'authed') {
+    return <Redirect href={selectedBuilding ? '/dashboard' : '/select-building'} />;
+  }
+  return <Redirect href="/login" />;
 }
 
 const styles = StyleSheet.create({

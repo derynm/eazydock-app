@@ -33,7 +33,7 @@ export default function Login() {
     setSubmitting(true);
     try {
       await login(email.trim(), password);
-      router.replace('/dashboard');
+      router.replace('/select-building');
     } catch (e) {
       setError(toApiError(e));
     } finally {

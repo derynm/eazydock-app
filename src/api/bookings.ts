@@ -1,6 +1,6 @@
 import { api, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { Booking, BookingsBySpaceResponse, Building, DriverType, ListParams, Paginator, ParkingArea, ParkingSpace, Tenant } from './types';
+import type { Booking, BookingsBySpaceGroup, BookingsBySpaceResponse, Building, DriverType, ParkingArea, ParkingSpace, SpaceStatus, Tenant } from './types';
 
 export type BookingInput = {
   building_id: number;
@@ -29,28 +29,57 @@ export type BookingFormData = {
   drivers: { id: number; full_name: string }[];
 };
 
-export async function listBookings(params: ListParams = {}): Promise<Paginator<Booking>> {
+export type BookingsBySpaceParams = {
+  date: string;
+  status?: SpaceStatus | '';
+  building_id?: number;
+  parking_area_id?: number;
+  search?: string;
+};
+
+/** One row per parking space — occupied/booked spaces carry their booking(s), available spaces are returned empty. */
+export async function listBookingsBySpace(params: BookingsBySpaceParams): Promise<BookingsBySpaceGroup[]> {
   if (USE_FIXTURES) {
     const q = (params.search ?? '').toLowerCase();
-    const rows = fx.bookings.filter(
-      (b) =>
-        (!params.status || b.status === params.status) &&
-        (!params.parking_area_id || b.parking_area_id === Number(params.parking_area_id)) &&
-        (!q ||
+    const dateStr = params.date;
+
+    const scopedSpaces = fx.parkingSpaces.filter(
+      (s) =>
+        (!params.building_id || s.building_id === Number(params.building_id)) &&
+        (!params.parking_area_id || s.parking_area_id === Number(params.parking_area_id)),
+    );
+
+    const groups: BookingsBySpaceGroup[] = scopedSpaces.map((space) => {
+      const spaceBookings = fx.bookings.filter((b) => {
+        if (b.parking_space_id !== space.id) return false;
+        if (dateStr) {
+          const startDate = b.starts_at.slice(0, 10);
+          const endDate = b.ends_at.slice(0, 10);
+          if (startDate > dateStr || endDate < dateStr) return false;
+        }
+        if (q && !(
           b.booking_no.toLowerCase().includes(q) ||
           b.plate_number_raw.toLowerCase().includes(q) ||
-          (b.contact_name ?? '').toLowerCase().includes(q)),
-    );
-    return fx.delay(fx.paginate(rows, Number(params.page) || 1));
+          (b.contact_name ?? '').toLowerCase().includes(q)
+        )) return false;
+        return true;
+      });
+
+      const isOccupied = fx.transactions.some(
+        (t) => t.parking_space_id === space.id && (t.status === 'active' || t.status === 'overstay'),
+      );
+      const hasActiveBooking = spaceBookings.some((b) => b.status === 'pending' || b.status === 'confirmed');
+      const spaceStatus: SpaceStatus = isOccupied ? 'occupied' : hasActiveBooking ? 'booked' : 'available';
+
+      return { parking_space_id: space.id, space_code: space.space_code, status: spaceStatus, bookings: spaceBookings };
+    });
+
+    const filteredGroups = params.status ? groups.filter((g) => g.status === params.status) : groups;
+    return fx.delay(filteredGroups);
   }
   try {
     const { data } = await api.get<BookingsBySpaceResponse>('/admin/bookings/by-space', { params });
-    const bookings = data.data.flatMap((group) => group.bookings);
-    return {
-      data: bookings,
-      links: { first: null, last: null, prev: null, next: null },
-      meta: { current_page: 1, last_page: 1, per_page: bookings.length, total: bookings.length },
-    };
+    return data.data;
   } catch (e) {
     throw toApiError(e);
   }

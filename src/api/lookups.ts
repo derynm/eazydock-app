@@ -1,6 +1,6 @@
 import { api, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { Building, Driver, ParkingArea, ParkingSpace, Tenant } from './types';
+import type { Building, Driver, ParkingArea, ParkingSpace, RoleResource, Tenant } from './types';
 
 export async function lookupBuildings(): Promise<Building[]> {
   if (USE_FIXTURES) return fx.delay(fx.buildings);
@@ -42,6 +42,12 @@ export async function lookupTenants(buildingId?: number): Promise<Pick<Tenant, '
     params: { building_id: buildingId },
   });
   return data.tenants;
+}
+
+export async function lookupRoles(): Promise<RoleResource[]> {
+  if (USE_FIXTURES) return fx.delay(fx.roles);
+  const { data } = await api.get<{ roles: RoleResource[] }>('/admin/lookups/roles');
+  return data.roles;
 }
 
 export async function searchDrivers(q: string): Promise<Pick<Driver, 'id' | 'full_name' | 'phone' | 'company_name'>[]> {

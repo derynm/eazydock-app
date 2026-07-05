@@ -9,7 +9,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text as RNText,
@@ -148,47 +147,18 @@ export function PlateScanner({ visible, onResult, onClose }: Props) {
           </View>
         )}
 
-        {/* Overlay */}
+        {/* Status text pinned to bottom */}
         {permission?.granted ? (
-          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            {/* Dark scrim top */}
-            <View style={[styles.scrim, { height: '20%' }]} />
-
-            {/* Guide rectangle row */}
-            <View style={styles.guideRow}>
-              <View style={[styles.scrim, styles.sideScrim]} />
-              <View style={[styles.guide, { borderColor: state.kind === 'found' ? theme.success : '#FFFFFF' }]}>
-                {/* Corner marks */}
-                {(['tl', 'tr', 'bl', 'br'] as const).map((pos) => (
-                  <View
-                    key={pos}
-                    style={[
-                      styles.corner,
-                      pos.includes('t') ? styles.cornerTop : styles.cornerBottom,
-                      pos.includes('l') ? styles.cornerLeft : styles.cornerRight,
-                      { borderColor: state.kind === 'found' ? theme.success : '#FFFFFF' },
-                    ]}
-                  />
-                ))}
-              </View>
-              <View style={[styles.scrim, styles.sideScrim]} />
+          <View style={[styles.statusWrapper, { bottom: insets.bottom + Spacing.xxl }]} pointerEvents="box-none">
+            <View style={styles.statusRow}>
+              {state.kind === 'scanning' ? (
+                <ActivityIndicator color="#FFFFFF" size="small" style={{ marginRight: 8 }} />
+              ) : null}
+              <RNText style={[styles.statusText, { color: statusColor }]}>{statusLabel}</RNText>
             </View>
-
-            {/* Dark scrim bottom */}
-            <View style={[styles.scrim, { flex: 1 }]}>
-              {/* Status label */}
-              <View style={styles.statusRow}>
-                {state.kind === 'scanning' ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" style={{ marginRight: 8 }} />
-                ) : null}
-                <RNText style={[styles.statusText, { color: statusColor }]}>{statusLabel}</RNText>
-              </View>
-
-              {/* Type manually escape */}
-              <Pressable onPress={onClose} style={styles.manualLink}>
-                <RNText style={styles.manualText}>Type manually</RNText>
-              </Pressable>
-            </View>
+            <Pressable onPress={onClose} style={styles.manualLink} pointerEvents="auto">
+              <RNText style={styles.manualText}>Type manually</RNText>
+            </Pressable>
           </View>
         ) : null}
 
@@ -208,11 +178,6 @@ export function PlateScanner({ visible, onResult, onClose }: Props) {
   );
 }
 
-const GUIDE_ASPECT = Platform.OS === 'ios' ? 3.2 : 3.0;
-const GUIDE_WIDTH = 300;
-const GUIDE_HEIGHT = Math.round(GUIDE_WIDTH / GUIDE_ASPECT);
-const CORNER = 20;
-const CORNER_THICK = 3;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
@@ -221,34 +186,16 @@ const styles = StyleSheet.create({
   permBtn: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, borderRadius: Radius.md },
   permBtnText: { fontSize: FontSize.base, fontWeight: '600' },
 
-  scrim: { backgroundColor: 'rgba(0,0,0,0.55)' },
-  guideRow: { flexDirection: 'row', alignItems: 'center' },
-  sideScrim: { flex: 1, alignSelf: 'stretch' },
-
-  guide: {
-    width: GUIDE_WIDTH,
-    height: GUIDE_HEIGHT,
-    borderWidth: 1.5,
-    borderRadius: Radius.sm,
-    borderColor: '#FFFFFF',
-  },
-
-  corner: {
+  statusWrapper: {
     position: 'absolute',
-    width: CORNER,
-    height: CORNER,
-    borderColor: '#FFFFFF',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
   },
-  cornerTop: { top: -CORNER_THICK / 2, borderTopWidth: CORNER_THICK },
-  cornerBottom: { bottom: -CORNER_THICK / 2, borderBottomWidth: CORNER_THICK },
-  cornerLeft: { left: -CORNER_THICK / 2, borderLeftWidth: CORNER_THICK },
-  cornerRight: { right: -CORNER_THICK / 2, borderRightWidth: CORNER_THICK },
-
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Spacing.xl,
     paddingHorizontal: Spacing.lg,
   },
   statusText: { fontSize: FontSize.md, fontWeight: '600', color: '#FFFFFF', textAlign: 'center' },

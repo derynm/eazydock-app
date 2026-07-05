@@ -70,6 +70,14 @@ const ICONS = {
   scan: { ios: 'qrcode.viewfinder', other: 'crop_free' },
   torch: { ios: 'flashlight.on.fill', other: 'flashlight_on' },
   torchOff: { ios: 'flashlight.off.fill', other: 'flashlight_off' },
+
+  // Phase 2
+  buildings: { ios: 'building.fill', other: 'home_work' },
+  parkingArea: { ios: 'rectangle.fill.on.rectangle.fill', other: 'layers' },
+  parkingSpace: { ios: 'square.grid.3x3.fill', other: 'grid_on' },
+  allocation: { ios: 'arrow.triangle.2.circlepath', other: 'autorenew' },
+  incident: { ios: 'exclamationmark.triangle.fill', other: 'security' },
+  grid: { ios: 'square.grid.2x2.fill', other: 'grid_view' },
 } as const satisfies Record<string, Glyph>;
 
 export type IconName = keyof typeof ICONS;

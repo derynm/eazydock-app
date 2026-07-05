@@ -1,18 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 
 import { toApiError } from '@/api/client';
-import { lookupBuildings, lookupParkingAreas, lookupParkingSpaces, lookupTenants, searchDrivers } from '@/api/lookups';
+import { lookupParkingAreas, lookupParkingSpaces, lookupTenants, searchDrivers } from '@/api/lookups';
 import { checkInSchema, type CheckInForm } from '@/api/schemas';
 import { checkIn, searchVehicles, type CheckInInput } from '@/api/transactions';
 import type { VehicleType } from '@/api/types';
+import { useSession } from '@/auth/session';
 import { Screen } from '@/components/screen';
-import { AutocompleteField, Banner, Button, Card, Icon, Section, Select, Text, TextField, type AutocompleteItem } from '@/components/ui';
+import { AutocompleteField, Banner, Button, Card, IconButton, Section, Select, TextField, type AutocompleteItem } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { lookupPlate } from '@/features/transactions/plate-lookup';
 import { PlateScanner } from '@/features/transactions/plate-scanner';
@@ -47,34 +46,31 @@ export default function CheckInScreen() {
   const theme = useTheme();
   const router = useRouter();
   const qc = useQueryClient();
+  const { selectedBuilding } = useSession();
   const [topError, setTopError] = useState<string | null>(null);
-  const [imageUri, setImageUri] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [lookup, setLookup] = useState<LookupState>({ status: 'idle' });
   const [revealed, setRevealed] = useState(false);
-  const [editVehicle, setEditVehicle] = useState(false);
   const [driverText, setDriverText] = useState('');
   const [newDriver, setNewDriver] = useState({ phone: '', company: '' });
   const [vehicleType, setVehicleType] = useState<VehicleType | undefined>();
 
   const { control, handleSubmit, watch, setValue, getValues, setError } = useForm<CheckInForm>({
     resolver: zodResolver(checkInSchema),
-    defaultValues: EMPTY,
+    defaultValues: { ...EMPTY, building_id: selectedBuilding?.id ?? 0 },
   });
 
-  const buildingId = watch('building_id');
+  const buildingId = selectedBuilding?.id ?? 0;
   const areaId = watch('parking_area_id');
   const driverId = watch('driver_id');
   // A typed driver name with no linked record → we'll create them on check-in.
   const isNewDriver = !driverId && driverText.trim().length > 0;
-  const vehicleSummary = [watch('vehicle_make'), watch('vehicle_model'), watch('vehicle_colour')]
-    .map((s) => s?.trim())
-    .filter(Boolean)
-    .join(' · ');
-  // Collapse make/model/colour into a summary line for known vehicles.
-  const showVehicleFields = lookup.status !== 'found' || editVehicle;
 
-  const { data: buildings = [] } = useQuery({ queryKey: ['lookup-buildings'], queryFn: lookupBuildings });
+  // Keep the hidden form field in sync if the user switches buildings.
+  useEffect(() => {
+    if (buildingId) setValue('building_id', buildingId);
+  }, [buildingId, setValue]);
+
   const { data: areas = [] } = useQuery({ queryKey: ['lookup-areas', buildingId], queryFn: () => lookupParkingAreas(buildingId), enabled: !!buildingId });
   const { data: spaces = [] } = useQuery({ queryKey: ['lookup-spaces', areaId], queryFn: () => lookupParkingSpaces(areaId, true), enabled: !!areaId });
   const { data: tenants = [] } = useQuery({ queryKey: ['lookup-tenants', buildingId], queryFn: () => lookupTenants(buildingId), enabled: !!buildingId });
@@ -97,13 +93,11 @@ export default function CheckInScreen() {
       setValue('vehicle_colour', p.colour ?? '');
       setVehicleType(p.vehicleType);
       if (p.driverType) setValue('driver_type', p.driverType);
-      if (p.buildingId) setValue('building_id', p.buildingId);
       if (p.parkingAreaId) setValue('parking_area_id', p.parkingAreaId);
       setValue('parking_space_id', null);
       setValue('tenant_id', p.tenantId ?? null);
       setValue('driver_id', p.driverId ?? null);
       setDriverText(p.driverId ? (p.driverName ?? `Driver #${p.driverId}`) : '');
-      setEditVehicle(false);
       setLookup({ status: 'found', driverName: p.driverName, tenantName: p.tenantName, lastVisitAt: p.lastVisitAt });
     } catch {
       setLookup({ status: 'idle' });
@@ -120,7 +114,6 @@ export default function CheckInScreen() {
     setVehicleType(undefined);
     setDriverText('');
     setNewDriver({ phone: '', company: '' });
-    setEditVehicle(false);
     setLookup({ status: 'idle' });
   };
 
@@ -153,7 +146,6 @@ export default function CheckInScreen() {
         driver_type: values.driver_type,
         entry_method: values.entry_method,
         comments: values.comments || null,
-        imageUri,
       };
       return checkIn(input);
     },
@@ -172,16 +164,6 @@ export default function CheckInScreen() {
     },
   });
 
-  const pickPhoto = async (fromCamera: boolean) => {
-    const perm = fromCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
-    const result = fromCamera
-      ? await ImagePicker.launchCameraAsync({ quality: 0.6 })
-      : await ImagePicker.launchImageLibraryAsync({ quality: 0.6, mediaTypes: ['images'] });
-    if (!result.canceled && result.assets[0]) setImageUri(result.assets[0].uri);
-  };
 
   return (
     <Screen title="New check-in" onBack={() => router.back()}>
@@ -194,11 +176,6 @@ export default function CheckInScreen() {
 
         <Card>
           <Section title="Vehicle">
-            {!revealed ? (
-              <Text variant="body" color="textSecondary">
-                Start by entering the vehicle’s number plate. We’ll prefill the details for returning vehicles.
-              </Text>
-            ) : null}
 
             <Controller
               control={control}
@@ -225,50 +202,22 @@ export default function CheckInScreen() {
                   onSubmitEditing={runLookup}
                   error={fieldState.error?.message}
                   hint={!revealed ? 'Type a plate — matching vehicles appear as you type.' : undefined}
+                  trailing={
+                    <IconButton name="scan" size={20} accessibilityLabel="Scan plate" onPress={() => setScanning(true)} />
+                  }
                 />
               )}
             />
 
-            {revealed ? (
-              <View style={styles.row}>
-                <Button
-                  title={lookup.status === 'loading' ? 'Looking up…' : 'Look up again'}
-                  icon="search"
-                  variant="secondary"
-                  size="sm"
-                  loading={lookup.status === 'loading'}
-                  onPress={runLookup}
-                  style={styles.flex}
-                />
-                <Button
-                  title="Scan"
-                  icon="scan"
-                  variant="secondary"
-                  size="sm"
-                  onPress={() => setScanning(true)}
-                />
-              </View>
-            ) : (
-              <View style={styles.columnGap}>
-                <Button
-                  title={lookup.status === 'loading' ? 'Looking up…' : 'Look up plate'}
-                  icon="search"
-                  variant="primary"
-                  size="lg"
-                  loading={lookup.status === 'loading'}
-                  onPress={runLookup}
-                  fullWidth
-                />
-                <Button
-                  title="Scan plate"
-                  icon="scan"
-                  variant="secondary"
-                  size="lg"
-                  onPress={() => setScanning(true)}
-                  fullWidth
-                />
-              </View>
-            )}
+            <Button
+              title={lookup.status === 'loading' ? 'Looking up…' : revealed ? 'Look up again' : 'Look up plate'}
+              icon="search"
+              variant={revealed ? 'secondary' : 'primary'}
+              size={revealed ? 'sm' : 'lg'}
+              loading={lookup.status === 'loading'}
+              onPress={runLookup}
+              fullWidth={!revealed}
+            />
 
             {lookup.status === 'found' ? (
               <Banner
@@ -286,34 +235,6 @@ export default function CheckInScreen() {
             ) : lookup.status === 'new' ? (
               <Banner tone="info" icon="info" title="New vehicle" message="No previous visits for this plate — enter the details below." />
             ) : null}
-
-            {revealed && !showVehicleFields ? (
-              <View style={[styles.summaryRow, { backgroundColor: theme.surfaceSunken }]}>
-                <View style={styles.flex}>
-                  <Text variant="caption" color="textMuted">
-                    Vehicle
-                  </Text>
-                  <Text variant="bodyStrong" numberOfLines={1}>
-                    {vehicleSummary || 'No details on file'}
-                  </Text>
-                </View>
-                <Button title="Edit" variant="ghost" size="sm" icon="edit" onPress={() => setEditVehicle(true)} />
-              </View>
-            ) : revealed ? (
-              <>
-                <View style={styles.row}>
-                  <Controller control={control} name="vehicle_make" render={({ field }) => (
-                    <View style={styles.flex}><TextField label="Make" placeholder="Toyota" value={field.value} onChangeText={field.onChange} /></View>
-                  )} />
-                  <Controller control={control} name="vehicle_model" render={({ field }) => (
-                    <View style={styles.flex}><TextField label="Model" placeholder="HiAce" value={field.value} onChangeText={field.onChange} /></View>
-                  )} />
-                </View>
-                <Controller control={control} name="vehicle_colour" render={({ field }) => (
-                  <TextField label="Colour" placeholder="White" value={field.value} onChangeText={field.onChange} />
-                )} />
-              </>
-            ) : null}
           </Section>
         </Card>
 
@@ -321,15 +242,6 @@ export default function CheckInScreen() {
           <>
         <Card>
           <Section title="Location">
-            <Controller
-              control={control}
-              name="building_id"
-              render={({ field, fieldState }) => (
-                <Select label="Building" required value={field.value || null} options={buildings.map((b) => ({ label: b.name, value: b.id }))}
-                  onChange={(v) => { field.onChange(v); setValue('parking_area_id', 0); setValue('parking_space_id', null); setValue('tenant_id', null); }}
-                  error={fieldState.error?.message} placeholder="Select building" />
-              )}
-            />
             <Controller
               control={control}
               name="parking_area_id"
@@ -394,29 +306,7 @@ export default function CheckInScreen() {
           </Section>
         </Card>
 
-        <Card>
-          <Section title="Photo (optional)">
-            {imageUri ? (
-              <View style={styles.photoWrap}>
-                <Image source={{ uri: imageUri }} style={styles.photo} contentFit="cover" />
-                <Button title="Remove" variant="ghost" size="sm" icon="close" onPress={() => setImageUri(null)} />
-              </View>
-            ) : (
-              <View style={styles.row}>
-                <Pressable style={[styles.photoBtn, { borderColor: theme.border }]} onPress={() => pickPhoto(true)}>
-                  <Icon name="camera" size={24} color={theme.primary} />
-                  <Text variant="label" color="textSecondary">Camera</Text>
-                </Pressable>
-                <Pressable style={[styles.photoBtn, { borderColor: theme.border }]} onPress={() => pickPhoto(false)}>
-                  <Icon name="image" size={24} color={theme.primary} />
-                  <Text variant="label" color="textSecondary">Library</Text>
-                </Pressable>
-              </View>
-            )}
-          </Section>
-        </Card>
-
-        <Button title="Check in vehicle" icon="carIn" size="lg" loading={mutation.isPending} onPress={handleSubmit((v) => mutation.mutate(v))} fullWidth />
+<Button title="Check in vehicle" icon="carIn" size="lg" loading={mutation.isPending} onPress={handleSubmit((v) => mutation.mutate(v))} fullWidth />
         <View style={styles.spacer} />
           </>
         ) : null}
@@ -441,8 +331,7 @@ const styles = StyleSheet.create({
   contentCentered: { flexGrow: 1, justifyContent: 'center' },
   newDriver: { gap: Spacing.md, padding: Spacing.md, borderRadius: Radius.md },
   row: { flexDirection: 'row', gap: Spacing.md },
-  columnGap: { gap: Spacing.sm },
-  summaryRow: {
+summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
@@ -452,8 +341,5 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
   },
   flex: { flex: 1 },
-  photoWrap: { gap: Spacing.sm, alignItems: 'flex-start' },
-  photo: { width: '100%', height: 180, borderRadius: Radius.md },
-  photoBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.xl, borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth, borderStyle: 'dashed' },
   spacer: { height: Spacing.xxl },
 });

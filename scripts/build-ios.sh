@@ -39,7 +39,7 @@ command -v pod >/dev/null 2>&1 || {
   exit 1
 }
 
-PROD_API="${API_URL:-https://eazydoc.eazycab.au/api}"
+PROD_API="${API_URL:-https://app.eazydock.com.au/api}"
 echo ">> Production API: ${PROD_API}"
 
 echo ">> Installing locked pnpm dependencies..."

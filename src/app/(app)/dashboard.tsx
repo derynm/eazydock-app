@@ -59,7 +59,6 @@ export default function Dashboard() {
         { label: 'Available bays', value: m.available_spaces, icon: 'pin' as const, tone: 'info' as const, hint: `${m.areas} areas` },
         { label: 'Today’s check-ins', value: m.today_transactions, icon: 'carIn' as const, tone: 'neutral' as const, hint: `${m.today_checkouts} check-outs` },
         { label: 'Overstay alerts', value: m.overstay_alerts, icon: 'warning' as const, tone: m.overstay_alerts > 0 ? ('warning' as const) : ('neutral' as const), hint: `${m.open_overstay_incidents} open incidents` },
-        { label: 'Plate review', value: m.plate_review_required, icon: 'camera' as const, tone: m.plate_review_required > 0 ? ('danger' as const) : ('neutral' as const), hint: 'awaiting review' },
       ]
     : [];
 

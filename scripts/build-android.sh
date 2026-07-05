@@ -28,7 +28,7 @@ command -v pnpm >/dev/null 2>&1 || {
   exit 1
 }
 
-export EXPO_PUBLIC_API_URL="${API_URL:-https://eazydoc.eazycab.au/api}"
+export EXPO_PUBLIC_API_URL="${API_URL:-https://app.eazydock.com.au/api}"
 export EXPO_NO_DOTENV=1
 echo ">> Production API: ${EXPO_PUBLIC_API_URL}"
 

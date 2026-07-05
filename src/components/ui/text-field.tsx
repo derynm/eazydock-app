@@ -16,10 +16,12 @@ type Props = TextInputProps & {
   required?: boolean;
   /** Toggleable password field. */
   secure?: boolean;
+  /** Element rendered after the input inside the input row (e.g. an icon button). */
+  trailing?: React.ReactNode;
 };
 
 export const TextField = forwardRef<TextInput, Props>(function TextField(
-  { label, error, hint, icon, required, secure, style, onFocus, onBlur, ...rest },
+  { label, error, hint, icon, required, secure, trailing, style, onFocus, onBlur, ...rest },
   ref,
 ) {
   const theme = useTheme();
@@ -58,6 +60,7 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
           }}
           {...rest}
         />
+        {trailing ?? null}
         {secure ? (
           <IconButton
             name={hidden ? 'eye' : 'eyeOff'}

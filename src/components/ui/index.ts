@@ -6,6 +6,7 @@ export { Button } from './button';
 export { Card, PressableCard } from './card';
 export { DateTimeField } from './date-time-field';
 export { Divider } from './divider';
+export { FilterSheet } from './filter-sheet';
 export { EmptyState } from './empty-state';
 export { Icon, type IconName } from './icon';
 export { IconButton } from './icon-button';

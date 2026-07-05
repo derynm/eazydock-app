@@ -17,6 +17,16 @@ const TONES: Record<string, Tone> = {
   confirmed: 'info',
   fulfilled: 'success',
   expired: 'neutral',
+  // parking areas
+  maintenance: 'warning',
+  // parking spaces
+  blocked: 'danger',
+  available: 'success',
+  occupied: 'info',
+  booked: 'warning',
+  // incidents
+  open: 'warning',
+  resolved: 'success',
 };
 
 /** Maps any domain status string to a badge tone + readable label. */

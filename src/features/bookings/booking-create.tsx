@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -9,8 +9,9 @@ import { toApiError } from '@/api/client';
 import { searchDrivers } from '@/api/lookups';
 import { bookingSchema, type BookingForm as BookingFormValues } from '@/api/schemas';
 import { searchVehicles } from '@/api/transactions';
+import { useSession } from '@/auth/session';
 import { Screen } from '@/components/screen';
-import { AutocompleteField, type AutocompleteItem, Banner, Button, Card, DateTimeField, Section, Select, Text, TextField } from '@/components/ui';
+import { AutocompleteField, Banner, Button, Card, DateTimeField, Section, Select, TextField, type AutocompleteItem } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { lookupPlate } from '@/features/transactions/plate-lookup';
 import { useTheme } from '@/hooks/use-theme';
@@ -38,18 +39,13 @@ type LookupState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'new' }
-  | {
-      status: 'found';
-      driverName?: string;
-      tenantName?: string;
-      lastVisitAt?: string | null;
-      vehicleSummary?: string;
-    };
+  | { status: 'found'; driverName?: string; tenantName?: string; lastVisitAt?: string | null };
 
 export function BookingCreate() {
   const router = useRouter();
   const theme = useTheme();
   const qc = useQueryClient();
+  const { selectedBuilding } = useSession();
   const [topError, setTopError] = useState<string | null>(null);
   const [lookup, setLookup] = useState<LookupState>({ status: 'idle' });
   const [revealed, setRevealed] = useState(false);
@@ -61,17 +57,20 @@ export function BookingCreate() {
     defaultValues: EMPTY,
   });
 
-  const buildingId = watch('building_id');
+  const buildingId = selectedBuilding?.id ?? 0;
   const areaId = watch('parking_area_id');
   const driverId = watch('driver_id');
   const isNewDriver = !driverId && driverText.trim().length > 0;
+
+  useEffect(() => {
+    if (buildingId) setValue('building_id', buildingId);
+  }, [buildingId, setValue]);
 
   const { data: formData } = useQuery({
     queryKey: ['booking-form-data'],
     queryFn: getBookingFormData,
   });
 
-  const buildings = formData?.buildings ?? [];
   const areas = (formData?.areas ?? []).filter((area) => area.building_id === buildingId);
   const spaces = (formData?.spaces ?? []).filter((space) => space.parking_area_id === areaId);
   const tenants = formData?.tenants ?? [];
@@ -96,7 +95,6 @@ export function BookingCreate() {
 
       setValue('vehicle_id', profile.vehicleId ?? null);
       if (profile.driverType) setValue('driver_type', profile.driverType);
-      if (profile.buildingId) setValue('building_id', profile.buildingId);
       if (profile.parkingAreaId) setValue('parking_area_id', profile.parkingAreaId);
       setValue('parking_space_id', 0);
       setValue('tenant_id', profile.tenantId ?? null);
@@ -109,7 +107,6 @@ export function BookingCreate() {
         driverName: profile.driverName,
         tenantName: profile.tenantName,
         lastVisitAt: profile.lastVisitAt,
-        vehicleSummary: [profile.make, profile.model, profile.colour].filter(Boolean).join(' · '),
       });
     } catch (error) {
       setTopError(toApiError(error).message);
@@ -176,11 +173,6 @@ export function BookingCreate() {
 
         <Card>
           <Section title="Vehicle">
-            {!revealed ? (
-              <Text variant="body" color="textSecondary">
-                Start by entering the vehicle’s number plate. We’ll prefill details for returning vehicles.
-              </Text>
-            ) : null}
 
             <Controller
               control={control}
@@ -225,28 +217,18 @@ export function BookingCreate() {
             />
 
             {lookup.status === 'found' ? (
-              <>
-                <Banner
-                  tone="success"
-                  icon="checkCircle"
-                  title="Returning vehicle"
-                  message={[
-                    lookup.driverName || null,
-                    lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
-                    lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                />
-                {lookup.vehicleSummary ? (
-                  <View style={[styles.summary, { backgroundColor: theme.surfaceSunken }]}>
-                    <Text variant="caption" color="textMuted">
-                      Vehicle
-                    </Text>
-                    <Text variant="bodyStrong">{lookup.vehicleSummary}</Text>
-                  </View>
-                ) : null}
-              </>
+              <Banner
+                tone="success"
+                icon="checkCircle"
+                title="Returning vehicle"
+                message={[
+                  lookup.driverName || null,
+                  lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
+                  lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              />
             ) : lookup.status === 'new' ? (
               <Banner
                 tone="info"
@@ -281,26 +263,6 @@ export function BookingCreate() {
 
             <Card>
               <Section title="Location">
-                <Controller
-                  control={control}
-                  name="building_id"
-                  render={({ field, fieldState }) => (
-                    <Select
-                      label="Building"
-                      required
-                      value={field.value || null}
-                      options={buildings.map((building) => ({ label: building.name, value: building.id }))}
-                      onChange={(value) => {
-                        field.onChange(value);
-                        setValue('parking_area_id', 0);
-                        setValue('parking_space_id', 0);
-                        setValue('tenant_id', null);
-                      }}
-                      error={fieldState.error?.message}
-                      placeholder="Select building"
-                    />
-                  )}
-                />
                 <Controller
                   control={control}
                   name="parking_area_id"
@@ -482,7 +444,6 @@ const styles = StyleSheet.create({
   content: { padding: Spacing.lg, gap: Spacing.lg },
   contentCentered: { flexGrow: 1, justifyContent: 'center' },
   newDriver: { gap: Spacing.md, padding: Spacing.md, borderRadius: Radius.md },
-  summary: { gap: Spacing.xs, padding: Spacing.md, borderRadius: Radius.md },
   notes: { minHeight: 80, textAlignVertical: 'top' },
   spacer: { height: Spacing.xxl },
 });

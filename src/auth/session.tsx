@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { fetchUser, login as apiLogin, logout as apiLogout } from '@/api/auth';
 import { setUnauthorizedHandler } from '@/api/client';
-import type { Company, PermissionMap, User } from '@/api/types';
+import type { Building, Company, PermissionMap, User } from '@/api/types';
 import { storage, StorageKeys } from '@/lib/storage';
 
 type Status = 'loading' | 'authed' | 'guest';
@@ -15,9 +15,12 @@ type SessionValue = {
   activeCompanyId: number | null;
   permissions: PermissionMap;
   isSuperAdmin: boolean;
+  selectedBuilding: Building | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   switchCompany: (companyId: number) => Promise<void>;
+  selectBuilding: (building: Building) => Promise<void>;
+  clearBuilding: () => Promise<void>;
 };
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -30,6 +33,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [activeCompanyId, setActiveCompanyId] = useState<number | null>(null);
   const [permissions, setPermissions] = useState<PermissionMap>({});
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
 
   const applyPayload = useCallback(
     async (payload: Awaited<ReturnType<typeof fetchUser>>) => {
@@ -47,11 +51,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const clearSession = useCallback(async () => {
     await storage.remove(StorageKeys.token);
     await storage.remove(StorageKeys.companyId);
+    await storage.remove(StorageKeys.buildingId);
+    await storage.remove(StorageKeys.buildingName);
     setUser(null);
     setCompanies([]);
     setActiveCompanyId(null);
     setPermissions({});
     setIsSuperAdmin(false);
+    setSelectedBuilding(null);
     setStatus('guest');
     queryClient.clear();
   }, [queryClient]);
@@ -73,6 +80,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
       try {
         await applyPayload(await fetchUser());
+        const bid = await storage.get(StorageKeys.buildingId);
+        const bname = await storage.get(StorageKeys.buildingName);
+        if (bid && bname) setSelectedBuilding({ id: Number(bid), name: bname });
         setStatus('authed');
       } catch {
         await clearSession();
@@ -99,6 +109,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await clearSession();
   }, [clearSession]);
 
+  const selectBuilding = useCallback(async (building: Building) => {
+    setSelectedBuilding(building);
+    await storage.set(StorageKeys.buildingId, String(building.id));
+    await storage.set(StorageKeys.buildingName, building.name);
+  }, []);
+
+  const clearBuilding = useCallback(async () => {
+    setSelectedBuilding(null);
+    await storage.remove(StorageKeys.buildingId);
+    await storage.remove(StorageKeys.buildingName);
+  }, []);
+
   const switchCompany = useCallback(
     async (companyId: number) => {
       setActiveCompanyId(companyId);
@@ -115,8 +137,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<SessionValue>(
-    () => ({ status, user, companies, activeCompanyId, permissions, isSuperAdmin, login, logout, switchCompany }),
-    [status, user, companies, activeCompanyId, permissions, isSuperAdmin, login, logout, switchCompany],
+    () => ({ status, user, companies, activeCompanyId, permissions, isSuperAdmin, selectedBuilding, login, logout, switchCompany, selectBuilding, clearBuilding }),
+    [status, user, companies, activeCompanyId, permissions, isSuperAdmin, selectedBuilding, login, logout, switchCompany, selectBuilding, clearBuilding],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

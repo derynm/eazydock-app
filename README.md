@@ -39,7 +39,7 @@ pnpm lint        # expo lint
 ## Local production builds
 
 Local release builds use the production API at
-`https://eazydoc.eazycab.au/api`, regardless of the development value in
+`https://app.eazydock.com.au/api`, regardless of the development value in
 `.env.local`. The build scripts disable Expo dotenv loading and inject this
 value directly:
 

@@ -1,12 +1,13 @@
 import { api, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { DriverType, EntryMethod, ListParams, Paginator, Transaction } from './types';
+import type { DriverType, EntryMethod, Incident, ListParams, Paginator, Transaction } from './types';
 
 export async function listTransactions(params: ListParams = {}): Promise<Paginator<Transaction>> {
   if (USE_FIXTURES) {
     const q = (params.search ?? '').toLowerCase();
     const rows = fx.transactions.filter(
       (t) =>
+        (!params.building_id || t.building_id === Number(params.building_id)) &&
         (!params.status || t.status === params.status) &&
         (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
         (!q ||
@@ -29,6 +30,7 @@ export async function listActiveVehicles(params: ListParams = {}): Promise<Pagin
     const q = (params.search ?? '').toLowerCase();
     const rows = fx.transactions.filter(
       (t) =>
+        (!params.building_id || t.building_id === Number(params.building_id)) &&
         (t.status === 'active' || t.status === 'overstay') &&
         (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
         (!params.driver_type || t.driver_type === params.driver_type) &&
@@ -267,6 +269,49 @@ export async function cancelTransaction(id: number): Promise<void> {
   }
   try {
     await api.post(`/admin/transactions/${id}/cancel`);
+  } catch (e) {
+    throw toApiError(e);
+  }
+}
+
+export async function markOverstay(id: number, description: string): Promise<Incident> {
+  if (USE_FIXTURES) {
+    const txn = fx.transactions.find((t) => t.id === id);
+    if (!txn) throw toApiError({ response: { status: 404, data: { message: 'Transaction not found' } } });
+    if (txn.status !== 'active' && txn.status !== 'overstay') {
+      throw toApiError({ response: { status: 422, data: { message: 'Validation failed', errors: { transaction: ['Overstay can only be logged for an active transaction.'] } } } });
+    }
+    const nowIso = new Date().toISOString();
+    const incident: Incident = {
+      id: fx.nextId(fx.incidents),
+      parking_transaction_id: txn.id,
+      parking_space_id: txn.parking_space_id,
+      incident_type: 'overstay',
+      description,
+      status: 'open',
+      reported_by: 1,
+      resolved_by: null,
+      resolved_at: null,
+      created_at: nowIso,
+      updated_at: nowIso,
+      parking_transaction: { id: txn.id, transaction_no: txn.transaction_no },
+      parking_space: txn.parking_space ? { id: txn.parking_space.id, space_code: txn.parking_space.space_code } : null,
+      reporter: { id: 1, name: 'Jordan Avery' },
+    };
+    fx.incidents.unshift(incident);
+    const txnIdx = fx.transactions.findIndex((t) => t.id === id);
+    if (txnIdx >= 0) {
+      fx.transactions[txnIdx] = {
+        ...fx.transactions[txnIdx],
+        status: 'overstay',
+        events: [...(fx.transactions[txnIdx].events ?? []), { id: Date.now(), type: 'overstay', description: 'Flagged as overstay', created_at: nowIso }],
+      };
+    }
+    return fx.delay(incident);
+  }
+  try {
+    const { data } = await api.post<{ data: Incident }>(`/admin/transactions/${id}/mark-overstay`, { description });
+    return data.data;
   } catch (e) {
     throw toApiError(e);
   }

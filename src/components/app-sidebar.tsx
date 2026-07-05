@@ -1,14 +1,14 @@
-import { useRouter, usePathname } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useSession } from '@/auth/session';
 import { BrandMark } from '@/components/brand';
 import { CompanySwitcher } from '@/components/company-switcher';
 import { Icon, Text } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
-import { useSession } from '@/auth/session';
-import { useTheme } from '@/hooks/use-theme';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useTheme } from '@/hooks/use-theme';
 import { MOBILE_MENU } from '@/navigation/mobile-menu';
 
 type Props = {
@@ -23,7 +23,7 @@ export function AppSidebar({ collapsed = false, onNavigate, onToggleCollapse, sh
   const router = useRouter();
   const pathname = usePathname();
   const { can } = usePermissions();
-  const { user, logout } = useSession();
+  const { user, logout, selectedBuilding } = useSession();
 
   const groups = MOBILE_MENU.map((g) => ({
     ...g,
@@ -52,9 +52,6 @@ export function AppSidebar({ collapsed = false, onNavigate, onToggleCollapse, sh
               <Text variant="bodyStrong" tint={theme.sidebarText}>
                 eazydock
               </Text>
-              <Text variant="caption" tint={theme.sidebarMuted}>
-                Operations
-              </Text>
             </View>
           ) : null}
           {showCollapseToggle && !collapsed ? (
@@ -63,6 +60,19 @@ export function AppSidebar({ collapsed = false, onNavigate, onToggleCollapse, sh
             </Pressable>
           ) : null}
         </View>
+
+        {/* Building chip */}
+        {!collapsed ? (
+          <Pressable
+            onPress={() => { onNavigate?.(); router.navigate('/select-building' as never); }}
+            style={[styles.buildingChip, { backgroundColor: theme.sidebarAlt }]}>
+            <Icon name="buildings" size={15} color={theme.sidebarMuted} />
+            <Text variant="caption" tint={theme.sidebarMuted} style={styles.buildingLabel} numberOfLines={1}>
+              {selectedBuilding ? selectedBuilding.name : 'Select building'}
+            </Text>
+            <Icon name="chevronDown" size={13} color={theme.sidebarMuted} />
+          </Pressable>
+        ) : null}
 
         {/* Nav */}
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.nav}>
@@ -150,6 +160,17 @@ const styles = StyleSheet.create({
   brandCollapsed: { justifyContent: 'center', paddingHorizontal: 0 },
   brandText: { flex: 1, gap: 1 },
   collapseBtn: { padding: 4 },
+  buildingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+  },
+  buildingLabel: { flex: 1 },
   nav: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, gap: Spacing.lg, paddingBottom: Spacing.xl },
   group: { gap: 2 },
   groupTitle: { paddingHorizontal: Spacing.sm, marginBottom: Spacing.xs },

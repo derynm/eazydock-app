@@ -22,3 +22,16 @@ export const ENTRY_METHODS: Option<string>[] = [
   { label: 'Image upload', value: 'image_upload' },
   { label: 'Browser camera', value: 'browser_camera' },
 ];
+
+/* ---- Phase 2 options ---- */
+export const BUILDING_STATUS = opt(['active', 'inactive'] as const);
+export const AREA_TYPES = opt(['standard', 'visitor', 'loading', 'contractor', 'mixed'] as const);
+export const AREA_STATUS = opt(['active', 'inactive', 'maintenance'] as const);
+export const SPACE_TYPES = opt(['standard', 'accessible', 'ev', 'motorcycle', 'loading', 'visitor'] as const);
+export const SPACE_USAGE = opt(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery', 'flexible'] as const);
+export const SPACE_OPERATIONAL_STATUS = opt(['active', 'inactive', 'maintenance', 'blocked'] as const);
+export const ALLOCATION_TYPES = opt(['flexible_quota', 'temporary_quota', 'visitor_quota', 'loading_quota'] as const);
+export const USER_CATEGORIES = opt(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery'] as const);
+export const INCIDENT_TYPES = opt(['damage', 'unauthorised_vehicle', 'overstay', 'blocked_space', 'safety', 'other'] as const);
+export const INCIDENT_STATUS = opt(['open', 'resolved', 'cancelled'] as const);
+export const USER_STATUS = opt(['active', 'inactive'] as const);
