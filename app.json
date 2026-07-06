@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "eazydock-app",
-    "slug": "eazydock-app",
+    "name": "eazydock",
+    "slug": "eazydock",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
@@ -10,12 +10,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.eazydock.app",
-      "buildNumber": "7",
+      "buildNumber": "8",
       "appleTeamId": "XATRLC4CB4"
     },
     "android": {
       "package": "com.eazydock.app",
-      "versionCode": 7,
+      "versionCode": 8,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#0B1F33",
