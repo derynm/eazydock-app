@@ -1,17 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { StyleSheet, View } from 'react-native';
 
 import { toApiError } from '@/api/client';
 import { createBooking, getBookingFormData, updateBooking, type BookingInput } from '@/api/bookings';
 import { searchDrivers } from '@/api/lookups';
 import { bookingSchema, type BookingForm as BookingFormValues } from '@/api/schemas';
+import { searchDriverCompanies } from '@/api/transactions';
 import type { Booking } from '@/api/types';
 import { FormSheet } from '@/components/form-sheet';
-import { AutocompleteField, DateTimeField, Select, Text, TextField } from '@/components/ui';
-import { Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { AutocompleteField, DateTimeField, Select, TextField } from '@/components/ui';
 import { DRIVER_TYPES } from '@/lib/options';
 import { zodResolver } from '@/lib/zod-resolver';
 
@@ -33,10 +31,9 @@ const EMPTY: BookingFormValues = {
   notes: '',
 };
 
-type NewDriverDraft = { phone: string; company: string };
-
-const toInput = (v: BookingFormValues, driverText: string, newDriver: NewDriverDraft): BookingInput => {
+const toInput = (v: BookingFormValues, driverText: string, driverCompany: string): BookingInput => {
   const creatingDriver = !v.driver_id && driverText.trim().length > 0;
+  const hasDriver = !!v.driver_id || creatingDriver;
   return {
     building_id: v.building_id,
     parking_area_id: v.parking_area_id,
@@ -44,8 +41,7 @@ const toInput = (v: BookingFormValues, driverText: string, newDriver: NewDriverD
     tenant_id: v.tenant_id ?? null,
     driver_id: v.driver_id ?? null,
     driver_name: creatingDriver ? driverText.trim() : null,
-    driver_phone: creatingDriver ? newDriver.phone || null : null,
-    driver_company_name: creatingDriver ? newDriver.company || null : null,
+    driver_company_name: hasDriver ? driverCompany || null : null,
     vehicle_id: v.vehicle_id ?? null,
     driver_type: v.driver_type,
     plate_number: v.plate_number,
@@ -58,11 +54,10 @@ const toInput = (v: BookingFormValues, driverText: string, newDriver: NewDriverD
 };
 
 export function BookingForm({ visible, booking, onClose }: Props) {
-  const theme = useTheme();
   const qc = useQueryClient();
   const [topError, setTopError] = useState<string | null>(null);
   const [driverText, setDriverText] = useState('');
-  const [newDriver, setNewDriver] = useState<NewDriverDraft>({ phone: '', company: '' });
+  const [driverCompany, setDriverCompany] = useState('');
   const initializedDriver = useRef<string | null>(null);
 
   const { data: formData } = useQuery({ queryKey: ['booking-form-data'], queryFn: getBookingFormData, enabled: visible });
@@ -105,7 +100,6 @@ export function BookingForm({ visible, booking, onClose }: Props) {
   const tenants = formData?.tenants ?? [];
   const drivers = useMemo(() => formData?.drivers ?? [], [formData?.drivers]);
   const driverId = watch('driver_id');
-  const isNewDriver = !driverId && driverText.trim().length > 0;
 
   useEffect(() => {
     if (!visible) {
@@ -119,15 +113,15 @@ export function BookingForm({ visible, booking, onClose }: Props) {
 
     const selected = booking?.driver_id ? drivers.find((driver) => driver.id === booking.driver_id) : undefined;
     setDriverText(selected?.full_name ?? (booking?.driver_id ? `Driver #${booking.driver_id}` : ''));
-    setNewDriver({ phone: '', company: '' });
+    setDriverCompany('');
     initializedDriver.current = key;
   }, [booking?.driver_id, booking?.id, drivers, visible]);
 
   const mutation = useMutation({
     mutationFn: (v: BookingFormValues) =>
       booking
-        ? updateBooking(booking.id, toInput(v, driverText, newDriver))
-        : createBooking(toInput(v, driverText, newDriver)),
+        ? updateBooking(booking.id, toInput(v, driverText, driverCompany))
+        : createBooking(toInput(v, driverText, driverCompany)),
     onMutate: () => setTopError(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] });
@@ -216,8 +210,8 @@ export function BookingForm({ visible, booking, onClose }: Props) {
       <Controller
         control={control}
         name="tenant_id"
-        render={({ field }) => (
-          <Select label="Tenant (optional)" value={field.value ?? null} options={tenants.map((t) => ({ label: t.name, value: t.id }))} onChange={field.onChange} placeholder="No tenant" />
+        render={({ field, fieldState }) => (
+          <Select label="Tenant (optional)" value={field.value ?? null} options={tenants.map((t) => ({ label: t.name, value: t.id }))} onChange={field.onChange} placeholder="No tenant" error={fieldState.error?.message} />
         )}
       />
       <AutocompleteField
@@ -241,32 +235,22 @@ export function BookingForm({ visible, booking, onClose }: Props) {
         }
         onSelect={(item) => {
           setDriverText(item.label);
-          setNewDriver({ phone: '', company: '' });
+          setDriverCompany('');
           setValue('driver_id', item.id);
         }}
       />
-      {isNewDriver ? (
-        <View style={[styles.newDriver, { backgroundColor: theme.surfaceSunken }]}>
-          <Text variant="caption" tint={theme.primary}>
-            New driver — “{driverText.trim()}” will be added to Drivers.
-          </Text>
-          <TextField
-            label="Phone"
-            icon="phone"
-            keyboardType="phone-pad"
-            placeholder="04xx xxx xxx"
-            value={newDriver.phone}
-            onChangeText={(phone) => setNewDriver((current) => ({ ...current, phone }))}
-          />
-          <TextField
-            label="Company"
-            icon="building"
-            placeholder="Company name"
-            value={newDriver.company}
-            onChangeText={(company) => setNewDriver((current) => ({ ...current, company }))}
-          />
-        </View>
-      ) : null}
+      <AutocompleteField
+        label="Company"
+        icon="building"
+        placeholder="Company name"
+        hint="Pick a match or type a new company name."
+        queryKey="booking-companies"
+        hideNoMatches
+        value={driverCompany}
+        onChangeText={setDriverCompany}
+        search={async (query) => (await searchDriverCompanies(query)).map((c) => ({ id: c.id, label: c.name }))}
+        onSelect={(item) => setDriverCompany(item.label)}
+      />
       <Controller
         control={control}
         name="contact_name"
@@ -291,11 +275,3 @@ export function BookingForm({ visible, booking, onClose }: Props) {
     </FormSheet>
   );
 }
-
-const styles = StyleSheet.create({
-  newDriver: {
-    gap: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-  },
-});

@@ -1,6 +1,40 @@
-import { type AxiosError, create, isAxiosError } from 'axios';
+import { type AxiosError, type InternalAxiosRequestConfig, create, isAxiosError } from 'axios';
 
 import { storage, StorageKeys } from '@/lib/storage';
+
+/** Renders a request as a copy-pasteable curl command for debugging (dev only). */
+function toCurl(config: InternalAxiosRequestConfig): string {
+  const url = `${config.baseURL ?? ''}${config.url ?? ''}`;
+  const query = config.params ? `?${new URLSearchParams(config.params).toString()}` : '';
+  const rawHeaders = (config.headers?.toJSON?.() ?? config.headers ?? {}) as Record<string, unknown>;
+  const headerFlags = Object.entries(rawHeaders)
+    .filter(([, v]) => v != null)
+    .map(([key, value]) => {
+      const v = key.toLowerCase() === 'authorization' ? `${String(value).slice(0, 16)}…` : String(value);
+      return `-H '${key}: ${v}'`;
+    })
+    .join(' ');
+
+  let body = '';
+  if (config.data instanceof FormData) {
+    const parts = (config.data as unknown as { _parts?: [string, unknown][] })._parts ?? [];
+    body = parts
+      .map(([key, value]) => {
+        if (value && typeof value === 'object' && 'uri' in (value as Record<string, unknown>)) {
+          const f = value as { uri: string; name?: string; type?: string };
+          return `-F '${key}=@${f.uri};type=${f.type ?? ''};filename=${f.name ?? ''}'`;
+        }
+        return `-F '${key}=${value}'`;
+      })
+      .join(' ');
+  } else if (config.data) {
+    body = `--data '${JSON.stringify(config.data)}'`;
+  }
+
+  return [`curl -X ${(config.method ?? 'get').toUpperCase()}`, `'${url}${query}'`, headerFlags, body]
+    .filter(Boolean)
+    .join(' ');
+}
 
 /**
  * Base URL resolution:
@@ -17,6 +51,13 @@ const ENV_API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').trim();
 export const API_URL = ENV_API_URL || (__DEV__ ? '' : PRODUCTION_API_URL);
 export const USE_FIXTURES = API_URL.length === 0;
 
+/**
+ * Web app origin (the dashboard the API belongs to) — the API base with its
+ * trailing `/api` stripped. Used for links back into the web app such as the
+ * forgot-password flow. Falls back to production when running on fixtures.
+ */
+export const APP_URL = (API_URL || PRODUCTION_API_URL).replace(/\/api\/?$/, '');
+
 export const api = create({
   baseURL: API_URL,
   headers: { Accept: 'application/json' },
@@ -29,6 +70,7 @@ api.interceptors.request.use(async (config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   if (companyId) config.headers['X-Company-Id'] = companyId;
   console.log(`[API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`, config.params ?? '');
+  if (__DEV__) console.log(`[API] curl: ${toCurl(config)}`);
   return config;
 });
 
@@ -44,7 +86,7 @@ api.interceptors.response.use(
     return r;
   },
   async (error: AxiosError) => {
-    console.warn(`[API] ✗ ${error.response?.status ?? 0} ${error.config?.url}`, error.message);
+    console.warn(`[API] ✗ ${error.response?.status ?? 0} ${error.config?.url}`, error.message, error.response?.data ?? '');
     if (error.response?.status === 401) {
       await storage.remove(StorageKeys.token);
       onUnauthorized?.();

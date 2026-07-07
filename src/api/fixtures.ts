@@ -215,6 +215,8 @@ export const transactions: Transaction[] = Array.from({ length: 34 }).map((_, i)
     exit_method: active ? null : 'manual_entry',
     entry_plate_number_raw: vehicle.plate_number,
     exit_plate_number_raw: active ? null : vehicle.plate_number,
+    contact_name: i % 4 === 0 ? driver.full_name : null,
+    contact_phone: i % 4 === 0 ? driver.phone : null,
     comments: i % 5 === 0 ? 'Refrigerated delivery — priority bay.' : null,
     vehicle_snapshot: { plate_number: vehicle.plate_number, make: vehicle.make ?? '', model: vehicle.model ?? '' },
     driver_snapshot: { full_name: driver.full_name, company_name: driver.company_name ?? '' },

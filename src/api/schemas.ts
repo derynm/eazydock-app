@@ -177,6 +177,8 @@ export const checkInSchema = z.object({
   vehicle_colour: optionalString(50),
   driver_type: z.enum(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery']),
   entry_method: z.enum(['browser_camera', 'image_upload', 'manual_entry']),
+  contact_name: optionalString(150),
+  contact_phone: optionalString(50),
   comments: optionalString(2000),
 });
 export type CheckInForm = z.infer<typeof checkInSchema>;

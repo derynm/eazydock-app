@@ -109,6 +109,10 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
               <KeyValue label="Duration" value={txn.duration_minutes != null ? formatDuration(txn.duration_minutes) : durationSince(txn.car_in_at)} icon="clock" />
               <Divider />
               <KeyValue label="Entry method" value={titleCase(txn.entry_method ?? '')} />
+              <Divider />
+              <KeyValue label="Contact name" value={txn.contact_name} icon="user" />
+              <Divider />
+              <KeyValue label="Contact phone" value={txn.contact_phone} icon="phone" />
             </View>
           </Section>
         </Card>

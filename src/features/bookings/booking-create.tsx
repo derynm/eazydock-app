@@ -8,13 +8,12 @@ import { createBooking, getBookingFormData, type BookingInput } from '@/api/book
 import { toApiError } from '@/api/client';
 import { searchDrivers } from '@/api/lookups';
 import { bookingSchema, type BookingForm as BookingFormValues } from '@/api/schemas';
-import { searchVehicles } from '@/api/transactions';
+import { searchDriverCompanies, searchVehicles } from '@/api/transactions';
 import { useSession } from '@/auth/session';
 import { Screen } from '@/components/screen';
 import { AutocompleteField, Banner, Button, Card, DateTimeField, Section, Select, TextField, type AutocompleteItem } from '@/components/ui';
-import { Radius, Spacing } from '@/constants/theme';
-import { lookupPlate } from '@/features/transactions/plate-lookup';
-import { useTheme } from '@/hooks/use-theme';
+import { Spacing } from '@/constants/theme';
+import { lookupPlate, type ActiveTransaction } from '@/features/transactions/plate-lookup';
 import { timeAgo } from '@/lib/format';
 import { DRIVER_TYPES } from '@/lib/options';
 import { zodResolver } from '@/lib/zod-resolver';
@@ -39,18 +38,23 @@ type LookupState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'new' }
-  | { status: 'found'; driverName?: string; tenantName?: string; lastVisitAt?: string | null };
+  | {
+      status: 'found';
+      driverName?: string;
+      tenantName?: string;
+      lastVisitAt?: string | null;
+      activeTransaction?: ActiveTransaction | null;
+    };
 
 export function BookingCreate() {
   const router = useRouter();
-  const theme = useTheme();
   const qc = useQueryClient();
   const { selectedBuilding } = useSession();
   const [topError, setTopError] = useState<string | null>(null);
   const [lookup, setLookup] = useState<LookupState>({ status: 'idle' });
   const [revealed, setRevealed] = useState(false);
   const [driverText, setDriverText] = useState('');
-  const [newDriver, setNewDriver] = useState({ phone: '', company: '' });
+  const [driverCompany, setDriverCompany] = useState('');
 
   const { control, getValues, handleSubmit, setError, setValue, watch } = useForm<BookingFormValues>({
     resolver: zodResolver(bookingSchema),
@@ -60,7 +64,6 @@ export function BookingCreate() {
   const buildingId = selectedBuilding?.id ?? 0;
   const areaId = watch('parking_area_id');
   const driverId = watch('driver_id');
-  const isNewDriver = !driverId && driverText.trim().length > 0;
 
   useEffect(() => {
     if (buildingId) setValue('building_id', buildingId);
@@ -88,25 +91,26 @@ export function BookingCreate() {
         setValue('vehicle_id', null);
         setValue('driver_id', null);
         setDriverText('');
-        setNewDriver({ phone: '', company: '' });
+        setDriverCompany('');
         setLookup({ status: 'new' });
         return;
       }
 
       setValue('vehicle_id', profile.vehicleId ?? null);
       if (profile.driverType) setValue('driver_type', profile.driverType);
-      if (profile.parkingAreaId) setValue('parking_area_id', profile.parkingAreaId);
       setValue('parking_space_id', 0);
       setValue('tenant_id', profile.tenantId ?? null);
       setValue('driver_id', profile.driverId ?? null);
       setDriverText(profile.driverId ? (profile.driverName ?? `Driver #${profile.driverId}`) : '');
-      setNewDriver({ phone: '', company: '' });
+      setDriverCompany('');
 
+      const priorVisit = profile.recentVisits.find((v) => v.id !== profile.activeTransaction?.id);
       setLookup({
         status: 'found',
         driverName: profile.driverName,
         tenantName: profile.tenantName,
-        lastVisitAt: profile.lastVisitAt,
+        lastVisitAt: priorVisit?.carInAt,
+        activeTransaction: profile.activeTransaction,
       });
     } catch (error) {
       setTopError(toApiError(error).message);
@@ -122,6 +126,7 @@ export function BookingCreate() {
   const mutation = useMutation({
     mutationFn: (values: BookingFormValues) => {
       const creatingDriver = !values.driver_id && driverText.trim().length > 0;
+      const hasDriver = !!values.driver_id || creatingDriver;
       const input: BookingInput = {
         building_id: values.building_id,
         parking_area_id: values.parking_area_id,
@@ -129,8 +134,7 @@ export function BookingCreate() {
         tenant_id: values.tenant_id ?? null,
         driver_id: values.driver_id ?? null,
         driver_name: creatingDriver ? driverText.trim() : null,
-        driver_phone: creatingDriver ? newDriver.phone || null : null,
-        driver_company_name: creatingDriver ? newDriver.company || null : null,
+        driver_company_name: hasDriver ? driverCompany || null : null,
         vehicle_id: values.vehicle_id ?? null,
         driver_type: values.driver_type,
         plate_number: values.plate_number,
@@ -217,18 +221,27 @@ export function BookingCreate() {
             />
 
             {lookup.status === 'found' ? (
-              <Banner
-                tone="success"
-                icon="checkCircle"
-                title="Returning vehicle"
-                message={[
-                  lookup.driverName || null,
-                  lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
-                  lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              />
+              <>
+                <Banner
+                  tone="success"
+                  icon="checkCircle"
+                  title="Returning vehicle"
+                  message={[
+                    lookup.driverName || null,
+                    lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
+                    lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                />
+                {lookup.activeTransaction ? (
+                  <Banner
+                    tone="warning"
+                    title="Currently checked in"
+                    message={`This vehicle is inside now (${lookup.activeTransaction.transactionNo}${lookup.activeTransaction.parkingSpaceCode ? ` · bay ${lookup.activeTransaction.parkingSpaceCode}` : ''}).`}
+                  />
+                ) : null}
+              </>
             ) : lookup.status === 'new' ? (
               <Banner
                 tone="info"
@@ -338,33 +351,28 @@ export function BookingCreate() {
                   }
                   onSelect={(item) => {
                     setDriverText(item.label);
-                    setNewDriver({ phone: '', company: '' });
+                    setDriverCompany('');
                     setValue('driver_id', item.id);
                   }}
                 />
-                {isNewDriver ? (
-                  <View style={[styles.newDriver, { backgroundColor: theme.surfaceSunken }]}>
-                    <TextField
-                      label="Phone"
-                      icon="phone"
-                      keyboardType="phone-pad"
-                      placeholder="04xx xxx xxx"
-                      value={newDriver.phone}
-                      onChangeText={(phone) => setNewDriver((current) => ({ ...current, phone }))}
-                    />
-                    <TextField
-                      label="Company"
-                      icon="building"
-                      placeholder="Company name"
-                      value={newDriver.company}
-                      onChangeText={(company) => setNewDriver((current) => ({ ...current, company }))}
-                    />
-                  </View>
-                ) : null}
+                <AutocompleteField
+                  label="Company"
+                  icon="building"
+                  placeholder="Company name"
+                  hint="Pick a match or type a new company name."
+                  queryKey="booking-companies"
+                  hideNoMatches
+                  value={driverCompany}
+                  onChangeText={setDriverCompany}
+                  search={async (query) =>
+                    (await searchDriverCompanies(query)).map((c) => ({ id: c.id, label: c.name }))
+                  }
+                  onSelect={(item) => setDriverCompany(item.label)}
+                />
                 <Controller
                   control={control}
                   name="tenant_id"
-                  render={({ field }) => (
+                  render={({ field, fieldState }) => (
                     <Select
                       label="Visiting (tenant)"
                       value={field.value ?? null}
@@ -372,6 +380,7 @@ export function BookingCreate() {
                       onChange={field.onChange}
                       placeholder={buildingId ? 'Select tenant' : 'Choose a building first'}
                       disabled={!buildingId}
+                      error={fieldState.error?.message}
                     />
                   )}
                 />
@@ -443,7 +452,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: Spacing.lg, gap: Spacing.lg },
   contentCentered: { flexGrow: 1, justifyContent: 'center' },
-  newDriver: { gap: Spacing.md, padding: Spacing.md, borderRadius: Radius.md },
   notes: { minHeight: 80, textAlignVertical: 'top' },
   spacer: { height: Spacing.xxl },
 });

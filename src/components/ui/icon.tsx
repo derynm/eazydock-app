@@ -26,6 +26,8 @@ const ICONS = {
   more: { ios: 'ellipsis', other: 'more_horiz' },
   listView: { ios: 'list.bullet', other: 'view_list' },
   tableView: { ios: 'tablecells', other: 'table_rows' },
+  download: { ios: 'square.and.arrow.down', other: 'file_download' },
+  share: { ios: 'square.and.arrow.up', other: 'ios_share' },
 
   chevronRight: { ios: 'chevron.right', other: 'chevron_right' },
   chevronLeft: { ios: 'chevron.left', other: 'chevron_left' },

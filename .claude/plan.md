@@ -297,7 +297,8 @@ two layouts share logic and only differ in presentation.
   the matching fields.
 - Type-ahead pickers (`SearchSelect`) reuse the search endpoints
   (`transactions/vehicle-search`, `transactions/car-search`,
-  `transactions/driver-search`, `lookups/drivers`) debounced ~250 ms, ≥ 2 chars.
+  `transactions/driver-search`, `transactions/company-search`, `lookups/drivers`)
+  debounced ~250 ms, ≥ 2 chars.
 - **Check-in driver/car handling:** the form never blocks on "the driver/car
   doesn't exist yet". The driver field is a search box → pick an existing driver
   (`driver_id`) **or** type a new name and submit it as `driver_name`
@@ -426,10 +427,11 @@ Duplicate (same driver+vehicle) → `422 errors.driver_id`. **Resource:**
 
 | Method · Path | Action | Notes |
 |---|---|---|
-| `GET /admin/transactions?search=&status=&building_id=&tenant_id=&parking_area_id=&page=` | view | all transactions |
+| `GET /admin/transactions?search=&status=&building_id=&tenant_id=&parking_area_id=&date_from=&date_to=&page=` | view | all transactions; `date_from`/`date_to` are `YYYY-MM-DD`, inclusive, filter on the **entry date** (`car_in_at`) |
 | `GET /admin/transactions/active-vehicles?search=&parking_area_id=&driver_type=&page=` | view | active only (area-restricted for non-admins) |
 | `GET /admin/transactions/vehicle-search?q=` | view | type-ahead: `{ vehicles: [{ id, car_id, plate_number }] }` (q ≥ 1) |
 | `GET /admin/transactions/driver-search?q=` | view | `{ drivers: [{ id, full_name, phone, email, company_name }] }` |
+| `GET /admin/transactions/company-search?q=` | view | driver-company type-ahead: `{ driver_companies: [{ id, name }] }` — suggests existing company names for `driver_company_name` |
 | `GET /admin/transactions/car-search?q=` | view | distinct cars: `{ cars: [{ id, vehicle_type, make, model, colour }] }` (fills check-in car fields) |
 | `GET /admin/transactions/plate-lookup?plate=` | view | **full-plate prefill for check-in** (shape ↓) |
 | `GET /admin/transactions/{id}` | view | includes relations + `events[]` |
@@ -442,12 +444,20 @@ Duplicate (same driver+vehicle) → `422 errors.driver_id`. **Resource:**
 (omit → server auto-assigns next available bay) · `tenant_id` · `vehicle_id`
 (existing) · `plate_number`* · `vehicle_make/model/colour` · `vehicle_type` (enum)
 · `driver_type`* (`building_owner|tenant|contractor|visitor|delivery`)
-· `entry_method`* (`browser_camera|image_upload|manual_entry`) · `comments` ·
-`image` (jpg/jpeg/png/webp, ≤10 MB). **Driver (optional):** send `driver_id` for
-an existing driver, **or** `driver_name` (+ optional `driver_phone`,
-`driver_company_name`) to **auto-create and link the driver** during check-in;
-send neither for no driver. Vehicle already active → `422`; banned → `422`; area
-full → `422 errors.parking_space_id`.
+· `entry_method`* (`browser_camera|image_upload|manual_entry`) · `contact_name`
+(max 150) · `contact_phone` (max 50) · `comments` · `image` (jpg/jpeg/png/webp,
+≤10 MB). **Driver (optional):** send `driver_id` for an existing driver, **or**
+`driver_name` (+ optional `driver_phone`, `driver_company_name`) to
+**auto-create and link the driver** during check-in; send neither for no
+driver. `driver_company_name` can be typed freely or picked from
+`transactions/company-search` suggestions — either way a new name is added to
+the company's driver-company list automatically. **Sending `driver_id` for an
+existing driver *also* syncs `driver_company_name`/`driver_phone` onto that
+driver's stored `company_name`/`phone`** — only when non-blank (blank/omitted
+values never wipe what's already stored), so re-typing a driver's company at
+check-in updates their one canonical record in place rather than creating a
+duplicate driver. Vehicle already active → `422`; banned → `422`; area full →
+`422 errors.parking_space_id`.
 **check-out body:** `exit_method`* (enum) · `plate_number` · `comments` · `image`.
 
 **`plate-lookup` — the check-in prefill flow.** App sends the full plate; if the
@@ -460,27 +470,39 @@ session; if unknown, everything is `null` and the app fills the form manually.
   "vehicle": { "id": 5, "car_id": 9, "plate_number": "ABC-123", "plate_state": "NSW",
                "status": "active", "vehicle_type": "van", "make": "Ford", "model": "Transit", "colour": "White" },
   "active_transaction": { "id": 12, "transaction_no": "TXN-…", "car_in_at": "…",
-                           "parking_space_id": 3, "driver_type": "contractor", "parking_space": {…} },
+                           "parking_space_id": 3, "driver_type": "contractor", "parking_space": {…},
+                           "contact_name": "Jane Doe", "contact_phone": "…" },
   "prefill": {                                  // from the vehicle's last visit
     "suggested_driver": { "id": 7, "full_name": "Jane Doe", "phone": "…", "company_name": "…" },
     "last_driver_type": "contractor",
     "last_tenant_id": 4,
-    "last_tenant": { "id": 4, "name": "Acme Co" }   // who they last visited
+    "last_tenant": { "id": 4, "name": "Acme Co" },  // who they last visited
+    "last_contact_name": "Jane Doe",
+    "last_contact_phone": "…"
   },
   "recent_visits": [ { "id", "transaction_no", "status", "driver_type", "driver_name",
-                       "tenant_id", "tenant_name", "car_in_at", "car_out_at", "duration_minutes" } ]
+                       "tenant_id", "tenant_name", "car_in_at", "car_out_at", "duration_minutes",
+                       "contact_name", "contact_phone" } ]
 }
 ```
 > Check-in screen flow: type plate → on full entry call `plate-lookup` → if
 > `vehicle` non-null, prefill `vehicle_*`, `driver_id` (= `suggested_driver.id`),
-> `driver_type` (= `last_driver_type`), `tenant_id` (= `last_tenant_id`) — all
-> editable; if `active_transaction` non-null, warn "already inside / check out
-> instead". If `vehicle` is null, leave the form blank for manual entry. The
+> `driver_type` (= `last_driver_type`), `tenant_id` (= `last_tenant_id`),
+> `contact_name`/`contact_phone` (= `last_contact_name`/`last_contact_phone`) —
+> all editable; if `active_transaction` non-null, warn "already inside / check
+> out instead". If `vehicle` is null, leave the form blank for manual entry. The
 > driver field stays editable either way: keep the `suggested_driver` (sends
 > `driver_id`) or clear it and type a new name (sends `driver_name` → the backend
-> creates + links the driver on submit).
+> creates + links the driver on submit). `company_name` on `suggested_driver` is
+> the driver's own record — keeping `driver_id` and typing a different
+> `driver_company_name`/`driver_phone` **updates that same driver in place**
+> (see the driver-record note in §6A Transactions), it does not create a
+> duplicate.
 
-**Resource:** `{ id, transaction_no, status, driver_type, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, transaction_date, car_in_at, car_out_at, duration_minutes, entry_method, exit_method, entry_plate_number_raw, exit_plate_number_raw, comments, vehicle_snapshot, driver_snapshot, tenant_snapshot, created_at, + (on show) building, parking_area, parking_space, tenant, driver, vehicle, events[] }`.
+**Resource:** `{ id, transaction_no, status, driver_type, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, transaction_date, car_in_at, car_out_at, duration_minutes, entry_method, exit_method, entry_plate_number_raw, exit_plate_number_raw, comments, vehicle_snapshot, driver_snapshot, tenant_snapshot, contact_name, contact_phone, created_at, + (on show) building, parking_area, parking_space, tenant, driver, vehicle, events[] }`.
+`contact_name`/`contact_phone` are set from the check-in body directly, or copied from the
+booking when a booking is fulfilled into a transaction (§ Bookings below) — they are
+plain fields on the transaction, not part of any snapshot.
 
 ### Bookings  (`operations.bookings`)
 
@@ -532,9 +554,11 @@ independent of the search term.
 **Driver (optional):** send `driver_id` for an existing driver, or `driver_name`
 (max 150) with optional `driver_phone` (max 50) and `driver_company_name`
 (max 150) to auto-create a company-scoped driver; send neither for no driver.
-When both are supplied, `driver_id` takes precedence. The driver is linked to an
-existing `vehicle_id` immediately, or to the vehicle created/resolved when the
-booking is fulfilled. Overlapping the same bay/time →
+When both are supplied, `driver_id` takes precedence — and `driver_phone`/
+`driver_company_name` sent alongside it **sync onto that existing driver**
+in place (non-blank values only; same behaviour as check-in). The driver is
+linked to an existing `vehicle_id` immediately, or to the vehicle created/
+resolved when the booking is fulfilled. Overlapping the same bay/time →
 `422 errors.parking_space_id`. **Immediate bookings on an occupied space are
 also rejected:** if `starts_at` is now or in the past *and* the space's live
 `occupancy_status` isn't `available` → `422 errors.parking_space_id`
@@ -544,6 +568,9 @@ occupancy (only against other bookings' time windows) — the space may well be
 vacated by then; occupancy is re-checked for real at fulfil time.
 **Resource:** `{ id, booking_no, status, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, driver_type, plate_number_raw, contact_name, contact_phone, starts_at, ends_at, notes, parking_transaction_id, created_at, + building, parking_area, parking_space, tenant, driver? }`.
 `driver` (when linked): `{ id, full_name, phone, email, company_name }`.
+**On fulfil:** the booking's `contact_name`/`contact_phone` are copied onto the
+resulting transaction (not just left on the booking), so check-out/reporting
+screens reading the transaction still have them.
 
 ---
 
@@ -558,6 +585,7 @@ vacated by then; occupancy is re-checked for real at fulfil time.
 | **Allocations** | `GET /admin/parking-allocations?building_id=&tenant_id=&allocation_type=&status=&page=` | create / edit / delete |
 | **Incidents** | `GET /admin/parking-incidents?status=&incident_type=&page=` | create / edit — **no delete** (matches the backend; once reported an incident is only ever updated to `resolved`/`cancelled`) |
 | **Transaction detail (existing Phase 1 screen)** | — | new **"Mark overstay"** action → `POST /admin/transactions/{id}/mark-overstay` |
+| **Transactions list (existing Phase 1 screen)** | — | new **"Export"** action → download **Excel** or **PDF** of the current filtered list via `GET /admin/transactions/export?format=excel\|pdf` |
 | **Users** *(pulled forward from Phase 4)* | `GET /admin/users?search=&page=` | create / edit / remove-from-company (`DELETE` only unlinks the user from the active company — the account itself isn't deleted); see §6D for the full, non-trivial contract |
 
 **Decision: no parking-area-user assignment management in the app.** There is
@@ -684,6 +712,43 @@ Only valid for an **active** transaction — otherwise `422 errors.transaction`
 ("Overstay can only be logged for an active transaction."). Same
 `parking.area.access` restriction as check-out/change-space/cancel (non-admins
 need an active `ParkingAreaUser` assignment for that transaction's area).
+
+### Transactions export  (`operations.transactions,export`) — file download
+
+One endpoint downloads the transactions list as a spreadsheet or a printable
+report, chosen by the **`format`** query param. It takes the **same query
+filters as `GET /admin/transactions`** (`search`, `status`, `building_id`,
+`tenant_id`, `parking_area_id`, `date_from`, `date_to`) and exports **every row that matches those
+filters** (not just the current page, and not just active). Gated by the
+**`export`** action on `operations.transactions` (distinct from `view` — a user
+can be allowed to read the list but not export it).
+
+| Method · Path | Returns |
+|---|---|
+| `GET /admin/transactions/export?format=excel&search=&status=&building_id=&tenant_id=&parking_area_id=&date_from=&date_to=` | `.xlsx` file (`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) |
+| `GET /admin/transactions/export?format=pdf&…same filters…` | `.pdf` file (`Content-Type: application/pdf`, A4 landscape) |
+
+- **`format`** is `excel` (default when omitted) or `pdf`. Any other/blank value
+  falls back to `excel`.
+- **`date_from` / `date_to`** are `YYYY-MM-DD` and **inclusive**, filtering on
+  the **entry date** (`car_in_at`). Send either or both (e.g. `date_from` alone =
+  everything from that day onward).
+
+- **Not JSON.** The response body is the **binary file**, with
+  `Content-Disposition: attachment; filename="transactions-YYYYMMDD-His.xlsx"`
+  (or `.pdf`). There is no `{ data: … }` envelope.
+- **Excel columns:** Transaction No, Status, Driver Type, Building, Parking Area,
+  Space, Plate Number, Driver, Contact Name, Contact Phone, Car In, Car Out,
+  Duration (min), Entry Method, Exit Method.
+- **PDF columns** (fits landscape): Transaction No, Status, Type, Area, Space,
+  Plate, Driver, Car In, Car Out, Duration.
+- **Downloading on the app:** these need the same `Authorization: Bearer` +
+  `X-Company-Id` headers as every `/admin/*` call, so a plain `<a href>` /
+  `Linking.openURL` won't carry auth. Fetch the file as a blob/arraybuffer
+  through the authed `axios` client (`responseType: 'blob'` / `'arraybuffer'`),
+  write it to a temp file (`expo-file-system`), then open/share it
+  (`expo-sharing`) or save it (`Sharing.shareAsync` / the OS share sheet). Gate
+  the Export button behind `can('operations.transactions', 'export')`.
 
 ---
 
@@ -820,7 +885,10 @@ as Phase 1 for most of these; Users (A-M6) is the exception — see §6D.
    under **Locations**.
 2. **A-M6 — Incidents & Users:** Incidents list/detail (create + resolve, no
    delete); "Mark overstay" action added to the existing Transaction detail
-   screen; add **Incidents** to the **Operations** menu group. (No
+   screen; **Export (Excel/PDF)** action added to the existing Transactions
+   list screen (authed blob download → share/save, gated by
+   `can('operations.transactions', 'export')` — see §6C Transactions export);
+   add **Incidents** to the **Operations** menu group. (No
    parking-area-user assignment screen — see §6B decision.) Users list/create/edit
    screen per §6D — role picker sourced from `GET /admin/lookups/roles`,
    company picker (super admin only) from `GET /companies`; handle the two

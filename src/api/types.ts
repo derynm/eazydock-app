@@ -121,6 +121,8 @@ export type Transaction = {
   exit_method: string | null;
   entry_plate_number_raw: string | null;
   exit_plate_number_raw: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
   comments: string | null;
   vehicle_snapshot: Record<string, string> | null;
   driver_snapshot: Record<string, string> | null;

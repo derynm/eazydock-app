@@ -22,6 +22,7 @@ import {
 } from '@/components/ui';
 import { Radius } from '@/constants/theme';
 import { TransactionDetail } from '@/features/transactions/transaction-detail';
+import { TransactionExportSheet } from '@/features/transactions/transaction-export';
 import { TransactionTable } from '@/features/transactions/transaction-table';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { usePaginatedList } from '@/hooks/use-paginated-list';
@@ -47,6 +48,7 @@ export default function TransactionsScreen() {
   const [scope, setScope] = useState<'active' | 'all'>('active');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
+  const [showExport, setShowExport] = useState(false);
   const debounced = useDebouncedValue(search);
   const { selectedBuilding } = useSession();
 
@@ -95,13 +97,18 @@ export default function TransactionsScreen() {
       title="Transactions"
       subtitle={list.total ? `${list.total} ${scope === 'active' ? 'on site' : 'total'}` : undefined}
       headerRight={
-        can('operations.transactions', 'create') ? (
-          isTablet ? (
-            <Button title="Check in" icon="carIn" size="sm" onPress={() => router.push('/transactions/check-in')} />
-          ) : (
-            <IconButton name="add" accessibilityLabel="New check-in" surface onPress={() => router.push('/transactions/check-in')} />
-          )
-        ) : undefined
+        <View style={styles.headerActions}>
+          {can('operations.transactions', 'export') ? (
+            <IconButton name="download" accessibilityLabel="Export transactions" surface onPress={() => setShowExport(true)} />
+          ) : null}
+          {can('operations.transactions', 'create') ? (
+            isTablet ? (
+              <Button title="Check in" icon="carIn" size="sm" onPress={() => router.push('/transactions/check-in')} />
+            ) : (
+              <IconButton name="add" accessibilityLabel="New check-in" surface onPress={() => router.push('/transactions/check-in')} />
+            )
+          ) : null}
+        </View>
       }>
       {viewMode === 'table' ? (
         <TransactionTable
@@ -164,11 +171,19 @@ export default function TransactionsScreen() {
           }}
         />
       )}
+
+      <TransactionExportSheet
+        visible={showExport}
+        onClose={() => setShowExport(false)}
+        buildingId={selectedBuilding?.id}
+        initialStatus={scope === 'active' ? 'active' : ''}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   icon: { width: 44, height: 44, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
   trail: { alignItems: 'flex-end', gap: 4 },
   toolbar: { gap: 12 },

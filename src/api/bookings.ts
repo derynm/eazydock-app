@@ -9,7 +9,6 @@ export type BookingInput = {
   tenant_id?: number | null;
   driver_id?: number | null;
   driver_name?: string | null;
-  driver_phone?: string | null;
   driver_company_name?: string | null;
   vehicle_id?: number | null;
   driver_type: DriverType;
@@ -131,14 +130,21 @@ function relations(input: BookingInput) {
 }
 
 function resolveFixtureDriverId(input: BookingInput): number | null {
-  if (input.driver_id) return input.driver_id;
+  if (input.driver_id) {
+    // Non-blank company_name syncs onto the existing driver in place (plan §6A).
+    const existing = fx.drivers.find((d) => d.id === input.driver_id);
+    if (existing && input.driver_company_name?.trim()) {
+      existing.company_name = input.driver_company_name.trim();
+    }
+    return input.driver_id;
+  }
   if (!input.driver_name?.trim()) return null;
 
   const nowIso = new Date().toISOString();
   const created = {
     id: fx.nextId(fx.drivers),
     full_name: input.driver_name.trim(),
-    phone: input.driver_phone ?? null,
+    phone: null,
     email: null,
     company_name: input.driver_company_name ?? null,
     license_no: null,

@@ -1,9 +1,10 @@
+import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { toApiError, type ApiError } from '@/api/client';
+import { APP_URL, toApiError, type ApiError } from '@/api/client';
 import { BrandMark } from '@/components/brand';
 import { Banner, Button, Icon, Text, TextField } from '@/components/ui';
 import { Brand, Radius, Spacing } from '@/constants/theme';
@@ -39,6 +40,10 @@ export default function Login() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const onForgotPassword = () => {
+    WebBrowser.openBrowserAsync(`${APP_URL}/forgot-password`);
   };
 
   const form = (
@@ -84,6 +89,12 @@ export default function Login() {
           required
         />
       </View>
+
+      <Pressable onPress={onForgotPassword} hitSlop={8} style={styles.forgot}>
+        <Text variant="label" tint={theme.primary}>
+          Forgot password?
+        </Text>
+      </Pressable>
 
       <Button title="Sign in" icon="arrowRight" loading={submitting} onPress={onSubmit} fullWidth size="lg" />
       <Text variant="caption" color="textMuted" center>
@@ -176,4 +187,5 @@ const styles = StyleSheet.create({
   formCard: { width: '100%', maxWidth: 400, alignSelf: 'center', gap: Spacing.xl },
   formHeader: { gap: Spacing.sm, alignItems: 'flex-start' },
   fields: { gap: Spacing.lg },
+  forgot: { alignSelf: 'flex-end', marginTop: -Spacing.md },
 });

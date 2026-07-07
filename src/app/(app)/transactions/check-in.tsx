@@ -7,15 +7,14 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 're
 import { toApiError } from '@/api/client';
 import { lookupParkingAreas, lookupParkingSpaces, lookupTenants, searchDrivers } from '@/api/lookups';
 import { checkInSchema, type CheckInForm } from '@/api/schemas';
-import { checkIn, searchVehicles, type CheckInInput } from '@/api/transactions';
+import { checkIn, searchDriverCompanies, searchVehicles, type CheckInInput } from '@/api/transactions';
 import type { VehicleType } from '@/api/types';
 import { useSession } from '@/auth/session';
 import { Screen } from '@/components/screen';
 import { AutocompleteField, Banner, Button, Card, IconButton, Section, Select, TextField, type AutocompleteItem } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
-import { lookupPlate } from '@/features/transactions/plate-lookup';
+import { lookupPlate, type ActiveTransaction } from '@/features/transactions/plate-lookup';
 import { PlateScanner } from '@/features/transactions/plate-scanner';
-import { useTheme } from '@/hooks/use-theme';
 import { timeAgo } from '@/lib/format';
 import { DRIVER_TYPES } from '@/lib/options';
 import { zodResolver } from '@/lib/zod-resolver';
@@ -33,6 +32,8 @@ const EMPTY: CheckInForm = {
   vehicle_colour: '',
   driver_type: 'delivery',
   entry_method: 'manual_entry',
+  contact_name: '',
+  contact_phone: '',
   comments: '',
 };
 
@@ -40,10 +41,15 @@ type LookupState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'new' }
-  | { status: 'found'; driverName?: string; tenantName?: string; lastVisitAt?: string | null };
+  | {
+      status: 'found';
+      driverName?: string;
+      tenantName?: string;
+      lastVisitAt?: string | null;
+      activeTransaction?: ActiveTransaction | null;
+    };
 
 export default function CheckInScreen() {
-  const theme = useTheme();
   const router = useRouter();
   const qc = useQueryClient();
   const { selectedBuilding } = useSession();
@@ -52,7 +58,7 @@ export default function CheckInScreen() {
   const [lookup, setLookup] = useState<LookupState>({ status: 'idle' });
   const [revealed, setRevealed] = useState(false);
   const [driverText, setDriverText] = useState('');
-  const [newDriver, setNewDriver] = useState({ phone: '', company: '' });
+  const [driverCompany, setDriverCompany] = useState('');
   const [vehicleType, setVehicleType] = useState<VehicleType | undefined>();
 
   const { control, handleSubmit, watch, setValue, getValues, setError } = useForm<CheckInForm>({
@@ -63,8 +69,6 @@ export default function CheckInScreen() {
   const buildingId = selectedBuilding?.id ?? 0;
   const areaId = watch('parking_area_id');
   const driverId = watch('driver_id');
-  // A typed driver name with no linked record → we'll create them on check-in.
-  const isNewDriver = !driverId && driverText.trim().length > 0;
 
   // Keep the hidden form field in sync if the user switches buildings.
   useEffect(() => {
@@ -93,12 +97,18 @@ export default function CheckInScreen() {
       setValue('vehicle_colour', p.colour ?? '');
       setVehicleType(p.vehicleType);
       if (p.driverType) setValue('driver_type', p.driverType);
-      if (p.parkingAreaId) setValue('parking_area_id', p.parkingAreaId);
       setValue('parking_space_id', null);
       setValue('tenant_id', p.tenantId ?? null);
       setValue('driver_id', p.driverId ?? null);
       setDriverText(p.driverId ? (p.driverName ?? `Driver #${p.driverId}`) : '');
-      setLookup({ status: 'found', driverName: p.driverName, tenantName: p.tenantName, lastVisitAt: p.lastVisitAt });
+      const priorVisit = p.recentVisits.find((v) => v.id !== p.activeTransaction?.id);
+      setLookup({
+        status: 'found',
+        driverName: p.driverName,
+        tenantName: p.tenantName,
+        lastVisitAt: priorVisit?.carInAt,
+        activeTransaction: p.activeTransaction,
+      });
     } catch {
       setLookup({ status: 'idle' });
     }
@@ -113,7 +123,7 @@ export default function CheckInScreen() {
     setValue('driver_id', null);
     setVehicleType(undefined);
     setDriverText('');
-    setNewDriver({ phone: '', company: '' });
+    setDriverCompany('');
     setLookup({ status: 'idle' });
   };
 
@@ -125,9 +135,11 @@ export default function CheckInScreen() {
 
   const mutation = useMutation({
     mutationFn: (values: CheckInForm) => {
-      // Linked driver → send driver_id. New driver → send the details and the
-      // backend creates + links it as part of check-in (no separate call).
+      // Linked driver → send driver_id (+ company syncs onto that driver in
+      // place). New driver → send the details and the backend creates + links
+      // it as part of check-in (no separate call).
       const linking = !values.driver_id && driverText.trim().length > 0;
+      const hasDriver = !!values.driver_id || linking;
       const input: CheckInInput = {
         building_id: values.building_id,
         parking_area_id: values.parking_area_id,
@@ -135,8 +147,7 @@ export default function CheckInScreen() {
         tenant_id: values.tenant_id ?? null,
         driver_id: values.driver_id ?? null,
         driver_name: linking ? driverText.trim() : null,
-        driver_phone: linking ? newDriver.phone || null : null,
-        driver_company_name: linking ? newDriver.company || null : null,
+        driver_company_name: hasDriver ? driverCompany || null : null,
         vehicle_id: values.vehicle_id ?? null,
         plate_number: values.plate_number,
         vehicle_make: values.vehicle_make || null,
@@ -145,6 +156,8 @@ export default function CheckInScreen() {
         vehicle_type: vehicleType ?? null,
         driver_type: values.driver_type,
         entry_method: values.entry_method,
+        contact_name: values.contact_name || null,
+        contact_phone: values.contact_phone || null,
         comments: values.comments || null,
       };
       return checkIn(input);
@@ -160,7 +173,13 @@ export default function CheckInScreen() {
     onError: (err) => {
       const api = toApiError(err);
       setTopError(api.status === 422 ? null : api.message);
-      Object.entries(api.errors).forEach(([field, msgs]) => setError(field as keyof CheckInForm, { message: msgs[0] }));
+      Object.entries(api.errors).forEach(([field, msgs]) => {
+        if (field.startsWith('driver_') && field !== 'driver_id') {
+          setTopError(msgs[0]);
+          return;
+        }
+        setError(field as keyof CheckInForm, { message: msgs[0] });
+      });
     },
   });
 
@@ -220,18 +239,27 @@ export default function CheckInScreen() {
             />
 
             {lookup.status === 'found' ? (
-              <Banner
-                tone="success"
-                icon="checkCircle"
-                title="Returning vehicle"
-                message={[
-                  lookup.driverName ? `${lookup.driverName}` : null,
-                  lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
-                  lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              />
+              <>
+                <Banner
+                  tone="success"
+                  icon="checkCircle"
+                  title="Returning vehicle"
+                  message={[
+                    lookup.driverName ? `${lookup.driverName}` : null,
+                    lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
+                    lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                />
+                {lookup.activeTransaction ? (
+                  <Banner
+                    tone="warning"
+                    title="Already inside"
+                    message={`Currently checked in (${lookup.activeTransaction.transactionNo}${lookup.activeTransaction.parkingSpaceCode ? ` · bay ${lookup.activeTransaction.parkingSpaceCode}` : ''}) — check out instead of checking in again.`}
+                  />
+                ) : null}
+              </>
             ) : lookup.status === 'new' ? (
               <Banner tone="info" icon="info" title="New vehicle" message="No previous visits for this plate — enter the details below." />
             ) : null}
@@ -289,16 +317,29 @@ export default function CheckInScreen() {
               }}
             />
 
-            {isNewDriver ? (
-              <View style={[styles.newDriver, { backgroundColor: theme.surfaceSunken }]}>
-                <TextField label="Phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={newDriver.phone} onChangeText={(v) => setNewDriver((s) => ({ ...s, phone: v }))} />
-                <TextField label="Company" icon="building" placeholder="Company name" value={newDriver.company} onChangeText={(v) => setNewDriver((s) => ({ ...s, company: v }))} />
-              </View>
-            ) : null}
+            <AutocompleteField
+              label="Company"
+              icon="building"
+              placeholder="Company name"
+              hint="Pick a match or type a new company name."
+              queryKey="checkin-companies"
+              hideNoMatches
+              value={driverCompany}
+              onChangeText={setDriverCompany}
+              search={async (q) => (await searchDriverCompanies(q)).map((c) => ({ id: c.id, label: c.name }))}
+              onSelect={(item) => setDriverCompany(item.label)}
+            />
 
-            <Controller control={control} name="tenant_id" render={({ field }) => (
+            <Controller control={control} name="tenant_id" render={({ field, fieldState }) => (
               <Select label="Visiting (tenant)" value={field.value ?? null} options={tenants.map((t) => ({ label: t.name, value: t.id }))}
-                onChange={field.onChange} placeholder={buildingId ? 'Select tenant' : 'Choose a building first'} disabled={!buildingId} />
+                onChange={field.onChange} placeholder={buildingId ? 'Select tenant' : 'Choose a building first'} disabled={!buildingId}
+                error={fieldState.error?.message} />
+            )} />
+            <Controller control={control} name="contact_name" render={({ field, fieldState }) => (
+              <TextField label="Contact name" icon="user" placeholder="Optional" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
+            )} />
+            <Controller control={control} name="contact_phone" render={({ field, fieldState }) => (
+              <TextField label="Contact phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
             )} />
             <Controller control={control} name="comments" render={({ field }) => (
               <TextField label="Comments" placeholder="Optional" multiline value={field.value} onChangeText={field.onChange} style={{ minHeight: 80, textAlignVertical: 'top' }} />
@@ -329,7 +370,6 @@ export default function CheckInScreen() {
 const styles = StyleSheet.create({
   content: { padding: Spacing.lg, gap: Spacing.lg },
   contentCentered: { flexGrow: 1, justifyContent: 'center' },
-  newDriver: { gap: Spacing.md, padding: Spacing.md, borderRadius: Radius.md },
   row: { flexDirection: 'row', gap: Spacing.md },
 summaryRow: {
     flexDirection: 'row',

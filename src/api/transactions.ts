@@ -1,3 +1,5 @@
+import { File, Paths } from 'expo-file-system';
+
 import { api, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
 import type { DriverType, EntryMethod, Incident, ListParams, Paginator, Transaction } from './types';
@@ -73,6 +75,31 @@ export async function searchVehicles(q: string): Promise<VehicleSearchResult[]> 
   }
 }
 
+export type DriverCompanySearchResult = { id: number; name: string };
+
+/** Type-ahead over existing driver-company names (plan §6A: company-search). */
+export async function searchDriverCompanies(q: string): Promise<DriverCompanySearchResult[]> {
+  if (USE_FIXTURES) {
+    const term = q.toLowerCase();
+    const names = Array.from(new Set(fx.drivers.map((d) => d.company_name).filter((n): n is string => !!n)));
+    return fx.delay(
+      names
+        .filter((n) => n.toLowerCase().includes(term))
+        .slice(0, 10)
+        .map((n, i) => ({ id: i + 1, name: n })),
+    );
+  }
+  try {
+    const { data } = await api.get<{ driver_companies: DriverCompanySearchResult[] }>(
+      '/admin/transactions/company-search',
+      { params: { q } },
+    );
+    return data.driver_companies;
+  } catch (e) {
+    throw toApiError(e);
+  }
+}
+
 export async function getTransaction(id: number): Promise<Transaction> {
   if (USE_FIXTURES) {
     const found = fx.transactions.find((t) => t.id === id);
@@ -95,7 +122,6 @@ export type CheckInInput = {
   driver_id?: number | null;
   // New (unlinked) driver — backend creates + links it during check-in.
   driver_name?: string | null;
-  driver_phone?: string | null;
   driver_company_name?: string | null;
   vehicle_id?: number | null;
   plate_number: string;
@@ -105,6 +131,8 @@ export type CheckInInput = {
   vehicle_type?: string | null;
   driver_type: DriverType;
   entry_method: EntryMethod;
+  contact_name?: string | null;
+  contact_phone?: string | null;
   comments?: string | null;
   imageUri?: string | null;
 };
@@ -140,7 +168,7 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
       const created = {
         id: fx.nextId(fx.drivers),
         full_name: input.driver_name.trim(),
-        phone: input.driver_phone ?? null,
+        phone: null,
         email: null,
         company_name: input.driver_company_name ?? null,
         license_no: null,
@@ -154,7 +182,12 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
       driverId = created.id;
       driverName = created.full_name;
     } else if (driverId) {
-      driverName = fx.drivers.find((d) => d.id === driverId)?.full_name;
+      const existing = fx.drivers.find((d) => d.id === driverId);
+      driverName = existing?.full_name;
+      // Non-blank company_name syncs onto the existing driver in place (plan §6A).
+      if (existing && input.driver_company_name?.trim()) {
+        existing.company_name = input.driver_company_name.trim();
+      }
     }
 
     const txn: Transaction = {
@@ -176,6 +209,8 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
       exit_method: null,
       entry_plate_number_raw: input.plate_number.toUpperCase(),
       exit_plate_number_raw: null,
+      contact_name: input.contact_name ?? null,
+      contact_phone: input.contact_phone ?? null,
       comments: input.comments ?? null,
       vehicle_snapshot: { plate_number: input.plate_number.toUpperCase(), make: input.vehicle_make ?? '', model: input.vehicle_model ?? '' },
       driver_snapshot: driverName ? { full_name: driverName } : null,
@@ -312,6 +347,107 @@ export async function markOverstay(id: number, description: string): Promise<Inc
   try {
     const { data } = await api.post<{ data: Incident }>(`/admin/transactions/${id}/mark-overstay`, { description });
     return data.data;
+  } catch (e) {
+    throw toApiError(e);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Export (download → share). Backend: GET /admin/transactions/export
+ * returns the raw file bytes for the given `format` + list filters.
+ * ------------------------------------------------------------------ */
+export type ExportFormat = 'excel' | 'pdf';
+
+/** A downloaded export saved locally, ready to hand to `Sharing.shareAsync`. */
+export type ExportResult = { uri: string; filename: string; mimeType: string; uti: string };
+
+const EXPORT_META: Record<ExportFormat, { ext: string; mimeType: string; uti: string }> = {
+  excel: {
+    ext: 'xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    uti: 'org.openxmlformats.spreadsheetml.sheet',
+  },
+  pdf: { ext: 'pdf', mimeType: 'application/pdf', uti: 'com.adobe.pdf' },
+};
+
+/**
+ * Writes bytes/text to a fresh file and returns its `file://` URI. Uses the
+ * **Documents** dir, not Caches — iOS's share sheet runs the picked app/
+ * extension in a separate process that frequently can't read the sandboxed
+ * Caches directory (fails with NSOSStatusErrorDomain -10814), while Documents
+ * is reliably exposed to it.
+ */
+function writeShareableFile(filename: string, content: Uint8Array | string): string {
+  const file = new File(Paths.document, filename);
+  file.create({ overwrite: true });
+  file.write(content);
+  return file.uri;
+}
+
+const csvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+/** Fixtures-only: a small CSV of the current rows so the share flow is demoable offline. */
+function transactionsCsv(rows: Transaction[]): string {
+  const header = ['Ref', 'Status', 'Plate', 'Driver', 'Area', 'Space', 'Checked in', 'Checked out', 'Duration (min)'];
+  const lines = rows.map((t) =>
+    [
+      t.transaction_no,
+      t.status,
+      t.entry_plate_number_raw,
+      t.driver?.full_name ?? t.driver_snapshot?.full_name ?? '',
+      t.parking_area?.name ?? '',
+      t.parking_space?.space_code ?? '',
+      t.car_in_at ?? '',
+      t.car_out_at ?? '',
+      t.duration_minutes ?? '',
+    ]
+      .map(csvCell)
+      .join(','),
+  );
+  return [header.map(csvCell).join(','), ...lines].join('\n');
+}
+
+/**
+ * Downloads the current transaction list as PDF or Excel and returns a local
+ * file URI. Honours the same `ListParams` filters as `listTransactions` so the
+ * export matches whatever the user selected. On fixtures (no backend) it emits
+ * a CSV of the in-memory rows instead so the download + share flow still works.
+ */
+export async function exportTransactions(format: ExportFormat, params: ListParams = {}): Promise<ExportResult> {
+  const meta = EXPORT_META[format];
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  if (USE_FIXTURES) {
+    const q = (params.search ?? '').toString().toLowerCase();
+    const dateFrom = params.date_from ? String(params.date_from) : null;
+    const dateTo = params.date_to ? String(params.date_to) : null;
+    const rows = fx.transactions.filter(
+      (t) =>
+        (!params.building_id || t.building_id === Number(params.building_id)) &&
+        (!params.status || t.status === params.status) &&
+        (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
+        (!params.driver_type || t.driver_type === params.driver_type) &&
+        (!dateFrom || (t.car_in_at ?? '') >= dateFrom) &&
+        (!dateTo || (t.car_in_at ?? '').slice(0, 10) <= dateTo) &&
+        (!q ||
+          t.transaction_no.toLowerCase().includes(q) ||
+          (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
+          (t.driver?.full_name ?? '').toLowerCase().includes(q)),
+    );
+    const filename = `transactions-${stamp}.csv`;
+    const uri = writeShareableFile(filename, transactionsCsv(rows));
+    await fx.delay(null);
+    return { uri, filename, mimeType: 'text/csv', uti: 'public.comma-separated-values-text' };
+  }
+
+  try {
+    const { data } = await api.get<ArrayBuffer>('/admin/transactions/export', {
+      params: { ...params, format },
+      responseType: 'arraybuffer',
+    });
+    const filename = `transactions-${stamp}.${meta.ext}`;
+    const uri = writeShareableFile(filename, new Uint8Array(data));
+    return { uri, filename, mimeType: meta.mimeType, uti: meta.uti };
   } catch (e) {
     throw toApiError(e);
   }
