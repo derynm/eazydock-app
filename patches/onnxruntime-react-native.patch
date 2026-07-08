@@ -1,0 +1,10 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 41b43599a9af6ef1c170047d39db1f3baa6ca682..85c92d94ae8f418d9316b5500bacd43c37387d09 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -1,4 +1,5 @@
+ import java.nio.file.Paths
++import org.gradle.util.internal.VersionNumber
+ 
+ buildscript {
+   repositories {

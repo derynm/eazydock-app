@@ -1,2 +1,4 @@
 allowBuilds:
   unrs-resolver: false
+patchedDependencies:
+  onnxruntime-react-native: patches/onnxruntime-react-native.patch
