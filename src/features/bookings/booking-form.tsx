@@ -239,6 +239,13 @@ export function BookingForm({ visible, booking, onClose }: Props) {
           setValue('driver_id', item.id);
         }}
       />
+      <Controller
+        control={control}
+        name="contact_phone"
+        render={({ field, fieldState }) => (
+          <TextField label="Contact phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
+        )}
+      />
       <AutocompleteField
         label="Company"
         icon="building"
@@ -250,20 +257,6 @@ export function BookingForm({ visible, booking, onClose }: Props) {
         onChangeText={setDriverCompany}
         search={async (query) => (await searchDriverCompanies(query)).map((c) => ({ id: c.id, label: c.name }))}
         onSelect={(item) => setDriverCompany(item.label)}
-      />
-      <Controller
-        control={control}
-        name="contact_name"
-        render={({ field, fieldState }) => (
-          <TextField label="Contact name" icon="user" placeholder="Contact person" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
-        )}
-      />
-      <Controller
-        control={control}
-        name="contact_phone"
-        render={({ field, fieldState }) => (
-          <TextField label="Contact phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
-        )}
       />
       <Controller
         control={control}

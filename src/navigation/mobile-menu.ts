@@ -28,7 +28,7 @@ export const MOBILE_MENU: MenuGroup[] = [
     key: 'operations',
     title: 'Operations',
     items: [
-      { key: 'transactions', label: 'Transactions', route: '/transactions', icon: 'transactions', slug: 'operations.transactions' },
+      { key: 'transactions', label: 'Activity', route: '/transactions', icon: 'transactions', slug: 'operations.transactions' },
       { key: 'bookings', label: 'Bookings', route: '/bookings', icon: 'bookings', slug: 'operations.bookings' },
       { key: 'incidents', label: 'Incidents', route: '/incidents', icon: 'incident', slug: 'operations.incidents' },
     ],

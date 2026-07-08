@@ -253,7 +253,6 @@ function Legend() {
     <View style={styles.legend}>
       <LegendItem color={theme.border} outline label="Available" />
       <LegendItem color={theme.warning} label="Booked" />
-      <LegendItem color={theme.info} label="Occupied" />
     </View>
   );
 }

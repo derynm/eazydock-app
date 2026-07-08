@@ -94,7 +94,7 @@ export default function TransactionsScreen() {
 
   return (
     <Screen
-      title="Transactions"
+      title="Activity"
       subtitle={list.total ? `${list.total} ${scope === 'active' ? 'on site' : 'total'}` : undefined}
       headerRight={
         <View style={styles.headerActions}>

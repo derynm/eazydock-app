@@ -1,12 +1,13 @@
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
-import { Icon, Text } from '@/components/ui';
+import logoMark from '@/assets/images/android-icon-monochrome.png';
+import { Text } from '@/components/ui';
 import { Brand, Radius } from '@/constants/theme';
 
 export function BrandMark({ size = 40 }: { size?: number }) {
   return (
     <View style={[styles.mark, { width: size, height: size, borderRadius: size * 0.28, backgroundColor: Brand[500] }]}>
-      <Icon name="pin" size={size * 0.56} color="#FFFFFF" weight="bold" />
+      <Image source={logoMark} style={{ width: size * 0.62, height: size * 0.62, tintColor: '#FFFFFF' }} resizeMode="contain" />
     </View>
   );
 }

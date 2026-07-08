@@ -316,6 +316,9 @@ export default function CheckInScreen() {
                 setValue('driver_id', item.id);
               }}
             />
+            <Controller control={control} name="contact_phone" render={({ field, fieldState }) => (
+              <TextField label="Contact phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
+            )} />
 
             <AutocompleteField
               label="Company"
@@ -334,12 +337,6 @@ export default function CheckInScreen() {
               <Select label="Visiting (tenant)" value={field.value ?? null} options={tenants.map((t) => ({ label: t.name, value: t.id }))}
                 onChange={field.onChange} placeholder={buildingId ? 'Select tenant' : 'Choose a building first'} disabled={!buildingId}
                 error={fieldState.error?.message} />
-            )} />
-            <Controller control={control} name="contact_name" render={({ field, fieldState }) => (
-              <TextField label="Contact name" icon="user" placeholder="Optional" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
-            )} />
-            <Controller control={control} name="contact_phone" render={({ field, fieldState }) => (
-              <TextField label="Contact phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
             )} />
             <Controller control={control} name="comments" render={({ field }) => (
               <TextField label="Comments" placeholder="Optional" multiline value={field.value} onChangeText={field.onChange} style={{ minHeight: 80, textAlignVertical: 'top' }} />

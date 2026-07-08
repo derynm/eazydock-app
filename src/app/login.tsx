@@ -1,14 +1,14 @@
-import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { APP_URL, toApiError, type ApiError } from '@/api/client';
+import { useSession } from '@/auth/session';
 import { BrandMark } from '@/components/brand';
 import { Banner, Button, Icon, Text, TextField } from '@/components/ui';
 import { Brand, Radius, Spacing } from '@/constants/theme';
-import { useSession } from '@/auth/session';
 import { useResponsive } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -52,7 +52,7 @@ export default function Login() {
         <BrandMark size={48} />
         <Text variant="title">Welcome back</Text>
         <Text variant="body" color="textSecondary">
-          Sign in with your eazydock dashboard credentials.
+          Sign in with your Eazydock dashboard credentials.
         </Text>
       </View>
 

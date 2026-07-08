@@ -50,7 +50,7 @@ export function AppSidebar({ collapsed = false, onNavigate, onToggleCollapse, sh
           {!collapsed ? (
             <View style={styles.brandText}>
               <Text variant="bodyStrong" tint={theme.sidebarText}>
-                eazydock
+                Eazydock
               </Text>
             </View>
           ) : null}
