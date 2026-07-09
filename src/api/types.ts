@@ -202,7 +202,7 @@ export type DashboardMetrics = {
 
 export type DashboardResponse = {
   metrics: DashboardMetrics;
-  active_vehicles: { data: Transaction[] };
+  active_vehicles: Transaction[];
 };
 
 /* ---- Lookups ---- */

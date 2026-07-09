@@ -58,6 +58,7 @@
     "typecheck": "tsc --noEmit",
     "gen-assets": "node ./scripts/gen-assets.mjs",
     "build:android": "bash scripts/build-android.sh",
+    "build:android-prod": "bash scripts/build-android.sh release aab",
     "build:ios": "bash scripts/build-ios.sh"
   },
   "private": true

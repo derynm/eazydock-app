@@ -387,7 +387,7 @@ export function dashboard(): DashboardResponse {
       flexible_allocation_used: 27,
       flexible_allocation_usage_percentage: 68,
     },
-    active_vehicles: { data: transactions.filter((t) => t.status === 'active' || t.status === 'overstay') },
+    active_vehicles: transactions.filter((t) => t.status === 'active' || t.status === 'overstay'),
   };
 }
 

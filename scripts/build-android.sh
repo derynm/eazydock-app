@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Local Android build (no EAS cloud).
-#   pnpm build:android -- [release|debug]
+#   pnpm build:android -- [release|debug] [apk|aab]
 #
 # EXPO_PUBLIC_* values are inlined at build time. Production builds default to
 # the live admin API below and intentionally override .env.local. Set API_URL to
@@ -13,10 +13,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 VARIANT="${1:-release}"
-case "$VARIANT" in
-  release) TASK="assembleRelease"; OUT="app/build/outputs/apk/release/app-release.apk" ;;
-  debug)   TASK="assembleDebug";   OUT="app/build/outputs/apk/debug/app-debug.apk" ;;
-  *) echo "ERROR: unknown variant '${VARIANT}' (use 'release' or 'debug')"; exit 1 ;;
+FORMAT="${2:-apk}"
+case "${VARIANT}:${FORMAT}" in
+  release:apk) TASK="assembleRelease"; OUT="app/build/outputs/apk/release/app-release.apk" ;;
+  debug:apk)   TASK="assembleDebug";   OUT="app/build/outputs/apk/debug/app-debug.apk" ;;
+  release:aab) TASK="bundleRelease";   OUT="app/build/outputs/bundle/release/app-release.aab" ;;
+  debug:aab)   TASK="bundleDebug";     OUT="app/build/outputs/bundle/debug/app-debug.aab" ;;
+  *) echo "ERROR: unknown variant/format '${VARIANT}/${FORMAT}' (variant: release|debug, format: apk|aab)"; exit 1 ;;
 esac
 
 command -v pnpm >/dev/null 2>&1 || {
@@ -46,9 +49,14 @@ grep -RqsF "${EXPO_PUBLIC_API_URL}" "${VERIFY_DIR}" || {
 echo ">> Prebuilding a clean Android project..."
 pnpm exec expo prebuild --platform android --clean
 
-# Physical phones and tablets use arm64. Override for an emulator or additional
-# targets, for example ANDROID_ABIS=x86_64.
-ABIS="${ANDROID_ABIS:-arm64-v8a}"
+# APKs default to arm64 only (physical phones/tablets); override for an
+# emulator or additional targets, e.g. ANDROID_ABIS=x86_64. AABs default to
+# every ABI so Play can serve the right slice to each device.
+if [ "${FORMAT}" = "aab" ]; then
+  ABIS="${ANDROID_ABIS:-armeabi-v7a,arm64-v8a,x86,x86_64}"
+else
+  ABIS="${ANDROID_ABIS:-arm64-v8a}"
+fi
 
 echo ">> Running Gradle ${TASK} (ABIs: ${ABIS})..."
 cd android
@@ -63,5 +71,10 @@ until ./gradlew "${TASK}" -PreactNativeArchitectures="${ABIS}"; do
 done
 
 echo ""
-echo "OK: APK built -> android/${OUT}"
-echo "    Install with: adb install -r android/${OUT}"
+if [ "${FORMAT}" = "aab" ]; then
+  echo "OK: AAB built -> android/${OUT}"
+  echo "    Upload this file to the Play Console."
+else
+  echo "OK: APK built -> android/${OUT}"
+  echo "    Install with: adb install -r android/${OUT}"
+fi

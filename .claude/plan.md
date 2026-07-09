@@ -364,7 +364,7 @@ two layouts share logic and only differ in presentation.
 
 | Method · Path | Notes |
 |---|---|
-| `GET /admin/dashboard` | `{ metrics: {...}, active_vehicles: { data:[…] } }`. `metrics` keys: `buildings, tenants, areas, total_spaces, active_spaces, occupied_spaces, available_spaces, occupancy_percentage, currently_inside, visitor_inside, delivery_inside, today_transactions, today_checkouts, overstay_alerts, open_overstay_incidents, plate_review_required, flexible_allocation_{quota,used,usage_percentage}`. Needs `dashboard,view`. |
+| `GET /admin/dashboard` | `{ metrics: {...}, active_vehicles: […] }` (plain array, not `data`-wrapped). `metrics` keys: `buildings, tenants, areas, total_spaces, active_spaces, occupied_spaces, available_spaces, occupancy_percentage, currently_inside, visitor_inside, delivery_inside, today_transactions, today_checkouts, overstay_alerts, open_overstay_incidents, plate_review_required, flexible_allocation_{quota,used,usage_percentage}`. Needs `dashboard,view`. |
 | `GET /admin/lookups/buildings` | `{ buildings: [{ id, name }] }` |
 | `GET /admin/lookups/parking-areas?building_id=` | `{ parking_areas: [{ id, building_id, name }] }` |
 | `GET /admin/lookups/parking-spaces?parking_area_id=&available_only=1` | `{ parking_spaces: [{ id, building_id, parking_area_id, space_code, occupancy_status }] }` |

@@ -62,7 +62,7 @@ export default function Dashboard() {
       ]
     : [];
 
-  const active = data?.active_vehicles.data ?? [];
+  const active = data?.active_vehicles ?? [];
 
   return (
     <Screen
