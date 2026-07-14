@@ -42,7 +42,7 @@ export function UserForm({ visible, user, onClose }: Props) {
   const updateForm = useForm<UserUpdateForm>({ resolver: zodResolver(userUpdateSchema), values: updateValues });
 
   const { control, handleSubmit, setError } = isEdit
-    ? (updateForm as typeof createForm)
+    ? (updateForm as unknown as typeof createForm)
     : createForm;
 
   const mutation = useMutation({

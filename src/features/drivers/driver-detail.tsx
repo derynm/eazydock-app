@@ -56,6 +56,8 @@ export function DriverDetail({ id, onDeleted }: { id: number; onDeleted?: () => 
               <Divider />
               <KeyValue label="Email" value={driver.email} icon="mail" />
               <Divider />
+              <KeyValue label="Company" value={driver.company_name} icon="building" />
+              <Divider />
               <KeyValue label="License" value={driver.license_no} icon="card" />
               <Divider />
               <KeyValue label="Added" value={formatDate(driver.created_at)} icon="clock" />

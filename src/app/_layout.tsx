@@ -8,9 +8,17 @@ import 'react-native-reanimated';
 import { queryClient } from '@/api/query-client';
 import { SessionProvider } from '@/auth/session';
 import { Colors } from '@/constants/theme';
-import { useScheme } from '@/hooks/use-theme';
+import { ThemePreferenceProvider, useScheme } from '@/hooks/use-theme';
 
 export default function RootLayout() {
+  return (
+    <ThemePreferenceProvider>
+      <RootLayoutContent />
+    </ThemePreferenceProvider>
+  );
+}
+
+function RootLayoutContent() {
   const scheme = useScheme();
   const palette = Colors[scheme];
 

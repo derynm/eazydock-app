@@ -10,6 +10,7 @@ import { useShell } from '@/shell/shell-context';
 type Props = {
   title: string;
   subtitle?: string;
+  subtitleLoading?: boolean;
   headerRight?: ReactNode;
   /** Sticky area below the title (search, filters). */
   toolbar?: ReactNode;
@@ -20,7 +21,7 @@ type Props = {
   children: ReactNode;
 };
 
-export function Screen({ title, subtitle, headerRight, toolbar, onBack, compactHeader, children }: Props) {
+export function Screen({ title, subtitle, subtitleLoading, headerRight, toolbar, onBack, compactHeader, children }: Props) {
   const theme = useTheme();
   const { isTablet, openDrawer, collapsed, toggleCollapsed } = useShell();
   const isCompact = compactHeader && !isTablet;
@@ -42,7 +43,9 @@ export function Screen({ title, subtitle, headerRight, toolbar, onBack, compactH
             <Text variant={isCompact ? 'heading' : 'title'} numberOfLines={1}>
               {title}
             </Text>
-            {subtitle ? (
+            {subtitleLoading ? (
+              <View style={[styles.subtitleSkeleton, { backgroundColor: theme.skeleton }]} />
+            ) : subtitle ? (
               <Text variant="caption" color="textMuted" numberOfLines={1}>
                 {subtitle}
               </Text>
@@ -72,6 +75,7 @@ const styles = StyleSheet.create({
   headerCompact: { minHeight: 50, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1 },
   titleWrap: { flex: 1, gap: 1 },
+  subtitleSkeleton: { width: 64, height: 14, borderRadius: 7 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   toolbar: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.md },
   body: { flex: 1 },

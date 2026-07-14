@@ -28,6 +28,7 @@ export type UserPayload = {
 
 export type LoginRequest = { email: string; password: string; device_name?: string };
 export type LoginResponse = UserPayload & { token: string };
+export type ResetPasswordRequest = { old_password: string; password: string; password_confirmation: string };
 
 /* ---- Shared enums ---- */
 export type EntityStatus = 'active' | 'inactive' | 'banned';
@@ -97,8 +98,10 @@ export type Tenant = {
 
 export type TransactionEvent = {
   id: number;
-  type: string;
-  description: string;
+  type?: string;
+  event_type?: string;
+  description?: string | null;
+  comments?: string | null;
   created_at: string;
 };
 
@@ -133,7 +136,7 @@ export type Transaction = {
   parking_area?: { id: number; name: string };
   parking_space?: { id: number; space_code: string };
   tenant?: { id: number; name: string };
-  driver?: { id: number; full_name: string };
+  driver?: { id: number; full_name: string; company_name?: string | null };
   vehicle?: { id: number; plate_number: string };
   events?: TransactionEvent[];
 };

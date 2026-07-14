@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet, View, type ScrollView } from 'react-native';
 
 import { createBooking, getBookingFormData, type BookingInput } from '@/api/bookings';
 import { toApiError } from '@/api/client';
@@ -10,6 +10,7 @@ import { searchDrivers } from '@/api/lookups';
 import { bookingSchema, type BookingForm as BookingFormValues } from '@/api/schemas';
 import { searchDriverCompanies, searchVehicles } from '@/api/transactions';
 import { useSession } from '@/auth/session';
+import { FormScrollView } from '@/components/form-error-scroll';
 import { Screen } from '@/components/screen';
 import { AutocompleteField, Banner, Button, Card, DateTimeField, Section, Select, TextField, type AutocompleteItem } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -55,6 +56,7 @@ export function BookingCreate() {
   const [revealed, setRevealed] = useState(false);
   const [driverText, setDriverText] = useState('');
   const [driverCompany, setDriverCompany] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
 
   const { control, getValues, handleSubmit, setError, setValue, watch } = useForm<BookingFormValues>({
     resolver: zodResolver(bookingSchema),
@@ -68,6 +70,12 @@ export function BookingCreate() {
   useEffect(() => {
     if (buildingId) setValue('building_id', buildingId);
   }, [buildingId, setValue]);
+
+  useEffect(() => {
+    if (!topError) return;
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [topError]);
 
   const { data: formData } = useQuery({
     queryKey: ['booking-form-data'],
@@ -102,7 +110,7 @@ export function BookingCreate() {
       setValue('tenant_id', profile.tenantId ?? null);
       setValue('driver_id', profile.driverId ?? null);
       setDriverText(profile.driverId ? (profile.driverName ?? `Driver #${profile.driverId}`) : '');
-      setDriverCompany('');
+      setDriverCompany(profile.driverCompanyName ?? '');
 
       const priorVisit = profile.recentVisits.find((v) => v.id !== profile.activeTransaction?.id);
       setLookup({
@@ -169,14 +177,16 @@ export function BookingCreate() {
   return (
     <Screen title="New booking" onBack={() => router.back()}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
-      <ScrollView
-        contentContainerStyle={[styles.content, !revealed && styles.contentCentered]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}>
-        {topError ? <Banner title="Couldn’t create booking" message={topError} tone="danger" /> : null}
+        <FormScrollView
+          ref={scrollRef}
+          style={styles.flex}
+          contentContainerStyle={[styles.content, !revealed && styles.contentCentered]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
+          {topError ? <Banner title="Couldn’t create booking" message={topError} tone="danger" /> : null}
 
-        <Card>
-          <Section title="Vehicle">
+          <Card>
+            <Section title="Vehicle">
 
             <Controller
               control={control}
@@ -188,7 +198,7 @@ export function BookingCreate() {
                   icon="vehicles"
                   placeholder="ABC123"
                   autoCapitalize="characters"
-                  autoFocus={!revealed}
+                  autoFocus={false}
                   returnKeyType="search"
                   queryKey="booking-vehicles"
                   minChars={1}
@@ -202,7 +212,6 @@ export function BookingCreate() {
                     (await searchVehicles(query)).map((vehicle) => ({ id: vehicle.id, label: vehicle.plate_number }))
                   }
                   onSelect={onPickVehicle}
-                  onEndEditing={runLookup}
                   onSubmitEditing={runLookup}
                   error={fieldState.error?.message}
                   hint={!revealed ? 'Type a plate — matching vehicles appear as you type.' : undefined}
@@ -250,11 +259,11 @@ export function BookingCreate() {
                 message="No previous visits for this plate. The vehicle will be resolved when the booking is fulfilled."
               />
             ) : null}
-          </Section>
-        </Card>
+            </Section>
+          </Card>
 
-        {revealed ? (
-          <>
+          {revealed ? (
+            <>
             <Card>
               <Section title="Schedule">
                 <Controller
@@ -426,9 +435,9 @@ export function BookingCreate() {
               fullWidth
             />
             <View style={styles.spacer} />
-          </>
-        ) : null}
-      </ScrollView>
+            </>
+          ) : null}
+        </FormScrollView>
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -437,7 +446,7 @@ export function BookingCreate() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: Spacing.lg, gap: Spacing.lg },
-  contentCentered: { flexGrow: 1, justifyContent: 'center' },
+  contentCentered: { flex: 1, flexGrow: 1, justifyContent: 'center' },
   notes: { minHeight: 80, textAlignVertical: 'top' },
   spacer: { height: Spacing.xxl },
 });

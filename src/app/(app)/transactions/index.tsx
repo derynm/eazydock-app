@@ -96,6 +96,7 @@ export default function TransactionsScreen() {
     <Screen
       title="Activity"
       subtitle={list.total ? `${list.total} ${scope === 'active' ? 'on site' : 'total'}` : undefined}
+      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         <View style={styles.headerActions}>
           {can('operations.transactions', 'export') ? (

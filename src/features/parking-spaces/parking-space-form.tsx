@@ -166,10 +166,15 @@ export function ParkingSpaceForm({ visible, space, onClose, onDeleted }: EditPro
               await deleteParkingSpace(space.id);
               qc.invalidateQueries({ queryKey: ['parking-spaces'] });
               qc.invalidateQueries({ queryKey: ['occupancy-grid'] });
+              qc.invalidateQueries({ queryKey: ['lookup-spaces'] });
+              qc.invalidateQueries({ queryKey: ['booking-form-data'] });
+              qc.invalidateQueries({ queryKey: ['bookings-by-space'] });
+              qc.removeQueries({ queryKey: ['parking-space', space.id] });
               onClose();
               onDeleted();
             } catch (e) {
-              setTopError(toApiError(e).message);
+              const err = toApiError(e);
+              setTopError(err.field('space') ?? err.message);
             }
           }}
         />

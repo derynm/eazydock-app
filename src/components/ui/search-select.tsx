@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { useErrorScrollField } from '@/components/form-error-scroll';
 import { Radius, Spacing } from '@/constants/theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useTheme } from '@/hooks/use-theme';
@@ -41,6 +42,7 @@ export function SearchSelect({
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term, 250);
+  const errorScrollRef = useErrorScrollField(error);
   const enabled = debounced.trim().length >= minChars;
 
   const { data: results = [], isFetching } = useQuery({
@@ -55,7 +57,7 @@ export function SearchSelect({
   };
 
   return (
-    <View style={styles.field}>
+    <View ref={errorScrollRef} style={styles.field}>
       {label ? (
         <Text variant="label" color="textSecondary">
           {label}

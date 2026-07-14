@@ -109,8 +109,9 @@ export async function createParkingSpace(input: ParkingSpaceInput): Promise<Park
   if (USE_FIXTURES) {
     const area = fx.parkingAreaResources.find((a) => a.id === input.parking_area_id);
     const building = area ? fx.buildingResources.find((b) => b.id === area.building_id) : null;
+    const id = fx.nextId(fx.parkingSpaceResources);
     const space: ParkingSpaceResource = {
-      id: fx.nextId(fx.parkingSpaceResources),
+      id,
       building_id: area?.building_id ?? 0,
       parking_area_id: input.parking_area_id,
       space_code: input.space_code,
@@ -131,6 +132,13 @@ export async function createParkingSpace(input: ParkingSpaceInput): Promise<Park
       current_vehicle: null,
     };
     fx.parkingSpaceResources.unshift(space);
+    fx.parkingSpaces.unshift({
+      id,
+      building_id: area?.building_id ?? 0,
+      parking_area_id: input.parking_area_id,
+      space_code: input.space_code,
+      occupancy_status: 'available',
+    });
     return fx.delay(space);
   }
   try {
@@ -151,8 +159,9 @@ export async function bulkCreateParkingSpaces(input: BulkCreateInput): Promise<B
       const code = `${input.prefix}${String(input.start_number + i).padStart(2, '0')}`;
       const exists = fx.parkingSpaceResources.some((s) => s.parking_area_id === input.parking_area_id && s.space_code === code);
       if (exists) { skipped++; continue; }
+      const id = fx.nextId(fx.parkingSpaceResources);
       fx.parkingSpaceResources.push({
-        id: fx.nextId(fx.parkingSpaceResources),
+        id,
         building_id: area?.building_id ?? 0,
         parking_area_id: input.parking_area_id,
         space_code: code,
@@ -172,6 +181,13 @@ export async function bulkCreateParkingSpaces(input: BulkCreateInput): Promise<B
         current_transaction: null,
         current_vehicle: null,
       });
+      fx.parkingSpaces.push({
+        id,
+        building_id: area?.building_id ?? 0,
+        parking_area_id: input.parking_area_id,
+        space_code: code,
+        occupancy_status: 'available',
+      });
       created++;
     }
     return fx.delay({ created, skipped });
@@ -188,7 +204,25 @@ export async function updateParkingSpace(id: number, input: ParkingSpaceInput): 
   if (USE_FIXTURES) {
     const idx = fx.parkingSpaceResources.findIndex((s) => s.id === id);
     if (idx < 0) throw toApiError({ response: { status: 404, data: { message: 'Parking space not found' } } });
-    fx.parkingSpaceResources[idx] = { ...fx.parkingSpaceResources[idx], ...input, updated_at: new Date().toISOString() };
+    const area = fx.parkingAreaResources.find((a) => a.id === input.parking_area_id);
+    const building = area ? fx.buildingResources.find((b) => b.id === area.building_id) : null;
+    fx.parkingSpaceResources[idx] = {
+      ...fx.parkingSpaceResources[idx],
+      ...input,
+      building_id: area?.building_id ?? fx.parkingSpaceResources[idx].building_id,
+      building: building ? { id: building.id, name: building.name } : fx.parkingSpaceResources[idx].building,
+      parking_area: area ? { id: area.id, name: area.name } : fx.parkingSpaceResources[idx].parking_area,
+      updated_at: new Date().toISOString(),
+    };
+    const lookupIdx = fx.parkingSpaces.findIndex((s) => s.id === id);
+    if (lookupIdx >= 0) {
+      fx.parkingSpaces[lookupIdx] = {
+        ...fx.parkingSpaces[lookupIdx],
+        building_id: area?.building_id ?? fx.parkingSpaces[lookupIdx].building_id,
+        parking_area_id: input.parking_area_id,
+        space_code: input.space_code,
+      };
+    }
     return fx.delay(fx.parkingSpaceResources[idx]);
   }
   try {
@@ -202,7 +236,28 @@ export async function updateParkingSpace(id: number, input: ParkingSpaceInput): 
 export async function deleteParkingSpace(id: number): Promise<void> {
   if (USE_FIXTURES) {
     const idx = fx.parkingSpaceResources.findIndex((s) => s.id === id);
-    if (idx >= 0) fx.parkingSpaceResources.splice(idx, 1);
+    if (idx < 0) throw toApiError({ response: { status: 404, data: { message: 'Parking space not found' } } });
+    const space = fx.parkingSpaceResources[idx];
+    const hasActiveTransaction = fx.transactions.some(
+      (t) => t.parking_space_id === id && (t.status === 'active' || t.status === 'overstay'),
+    );
+    const hasActiveBooking = fx.bookings.some(
+      (b) => b.parking_space_id === id && (b.status === 'pending' || b.status === 'confirmed'),
+    );
+    if (space.occupancy_status === 'occupied' || space.current_transaction_id != null || hasActiveTransaction || hasActiveBooking) {
+      throw toApiError({
+        response: {
+          status: 422,
+          data: {
+            message: 'The given data was invalid.',
+            errors: { space: ['This space is currently in use and cannot be deleted.'] },
+          },
+        },
+      });
+    }
+    fx.parkingSpaceResources.splice(idx, 1);
+    const lookupIdx = fx.parkingSpaces.findIndex((s) => s.id === id);
+    if (lookupIdx >= 0) fx.parkingSpaces.splice(lookupIdx, 1);
     await fx.delay(null);
     return;
   }

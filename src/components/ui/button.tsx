@@ -80,15 +80,13 @@ export function Button({
       <View style={styles.content}>
         {loading ? (
           <ActivityIndicator color={fg[variant]} size="small" />
-        ) : (
-          <>
-            {icon ? <Icon name={icon} size={iconSize} color={fg[variant]} weight="semibold" /> : null}
-            <Text variant={size === 'sm' ? 'label' : 'bodyStrong'} tint={fg[variant]} numberOfLines={1}>
-              {title}
-            </Text>
-            {iconRight ? <Icon name={iconRight} size={iconSize} color={fg[variant]} weight="semibold" /> : null}
-          </>
-        )}
+        ) : icon ? (
+          <Icon name={icon} size={iconSize} color={fg[variant]} weight="semibold" />
+        ) : null}
+        <Text variant={size === 'sm' ? 'label' : 'bodyStrong'} tint={fg[variant]} numberOfLines={1}>
+          {title}
+        </Text>
+        {!loading && iconRight ? <Icon name={iconRight} size={iconSize} color={fg[variant]} weight="semibold" /> : null}
       </View>
     </Pressable>
   );

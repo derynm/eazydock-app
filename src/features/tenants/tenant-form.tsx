@@ -185,7 +185,8 @@ export function TenantForm({ visible, tenant, onClose, onDeleted }: Props) {
               onClose();
               onDeleted();
             } catch (e) {
-              setTopError(toApiError(e).message);
+              const err = toApiError(e);
+              setTopError(err.field('tenant') ?? err.message);
             }
           }}
         />

@@ -103,7 +103,7 @@ export const parkingAreaSchema = z.object({
   code: optionalString(50),
   level: optionalString(50),
   area_type: z.enum(['standard', 'visitor', 'loading', 'contractor', 'mixed']),
-  capacity: z.number({ message: 'Capacity is required' }).int().min(0, 'Capacity must be 0 or more'),
+  capacity: z.number({ message: 'Capacity is required' }).int().min(1, 'Capacity must be at least 1'),
   status: z.enum(['active', 'inactive', 'maintenance']),
   notes: optionalString(2000),
 });
@@ -201,3 +201,15 @@ export const userUpdateSchema = z.object({
   status: z.enum(['active', 'inactive']),
 });
 export type UserUpdateForm = z.infer<typeof userUpdateSchema>;
+
+export const resetPasswordSchema = z
+  .object({
+    old_password: z.string().min(1, 'Current password is required'),
+    password: z.string().min(8, 'Password must be at least 8 characters'),
+    password_confirmation: z.string().min(1, 'Confirm your new password'),
+  })
+  .refine((v) => v.password === v.password_confirmation, {
+    message: 'Password confirmation does not match',
+    path: ['password_confirmation'],
+  });
+export type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;

@@ -133,9 +133,19 @@ function bookingLines(booking: Booking): string[] {
 /** Column header — space code only; per-hour status lives in the grid cells below. */
 function ColHeader({ group, colW }: { group: BookingsBySpaceGroup; colW: number }) {
   const theme = useTheme();
+  const isOccupied = group.status === 'occupied';
   return (
-    <View style={[styles.colHead, { width: colW, borderRightColor: theme.borderStrong }]}>
-      <Text variant="label" numberOfLines={1}>{group.space_code}</Text>
+    <View
+      style={[
+        styles.colHead,
+        {
+          width: colW,
+          borderRightColor: theme.borderStrong,
+          backgroundColor: isOccupied ? theme.dangerSoft : 'transparent',
+        },
+      ]}>
+      <Text variant="label" numberOfLines={1} style={isOccupied ? { color: theme.danger } : undefined}>{group.space_code}</Text>
+      {isOccupied ? <View style={[styles.colStatusBar, { backgroundColor: theme.danger }]} /> : null}
     </View>
   );
 }
@@ -149,8 +159,8 @@ function BookingBlock({ segment, colW, onPress }: { segment: BookingSegment; col
   const theme = useTheme();
   const { booking, top, height, status } = segment;
   const isOccupied = status === 'occupied';
-  const accent = isOccupied ? theme.info : theme.warning;
-  const fill = isOccupied ? theme.infoSoft : theme.warningSoft;
+  const accent = isOccupied ? theme.danger : theme.warning;
+  const fill = isOccupied ? theme.dangerSoft : theme.warningSoft;
   const lines = bookingLines(booking);
   const maxLines = Math.max(1, Math.floor((height - BLOCK_V_PADDING * 2) / BLOCK_LINE_H));
   const visibleLines = lines.slice(0, maxLines);
@@ -202,6 +212,7 @@ function GridColumn({
 }) {
   const theme = useTheme();
   const segments = useMemo(() => daySegments(group.bookings, selectedDate), [group.bookings, selectedDate]);
+  const isOccupied = group.status === 'occupied';
 
   return (
     <View
@@ -211,6 +222,7 @@ function GridColumn({
           width: colW,
           height: ROW_H * HOURS.length,
           borderRightColor: theme.borderStrong,
+          backgroundColor: isOccupied ? theme.dangerSoft : 'transparent',
         },
       ]}>
       {HOURS.map((h) => (
@@ -253,6 +265,7 @@ function Legend() {
     <View style={styles.legend}>
       <LegendItem color={theme.border} outline label="Available" />
       <LegendItem color={theme.warning} label="Booked" />
+      <LegendItem color={theme.danger} label="Occupied" />
     </View>
   );
 }
@@ -291,6 +304,7 @@ export default function BookingsScreen() {
 
   const {
     data: groups = [],
+    isLoading,
     isError,
     error,
     refetch,
@@ -354,6 +368,7 @@ export default function BookingsScreen() {
     <Screen
       title="Bookings"
       subtitle={count ? `${count} spaces · ${totalBookings} booking${totalBookings === 1 ? '' : 's'}` : undefined}
+      subtitleLoading={isLoading || isRefetching}
       headerRight={
         <View style={styles.headerActions}>
           <View>
@@ -538,7 +553,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     borderRightWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
+    gap: 5,
   },
+  colStatusBar: { width: 22, height: 3, borderRadius: Radius.pill },
 
   // Scrollable grid
   scroll: { flex: 1 },

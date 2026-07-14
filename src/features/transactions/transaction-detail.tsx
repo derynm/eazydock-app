@@ -6,6 +6,7 @@ import { toApiError } from '@/api/client';
 import { lookupParkingSpaces } from '@/api/lookups';
 import { cancelTransaction, changeSpace, checkOut, getTransaction, markOverstay } from '@/api/transactions';
 import { markOverstaySchema, type MarkOverstayForm } from '@/api/schemas';
+import type { TransactionEvent } from '@/api/types';
 import { Badge, Button, Card, Divider, EmptyState, KeyValue, Section, Select, Skeleton, Text, TextField } from '@/components/ui';
 import { zodResolver } from '@/lib/zod-resolver';
 import { FormSheet } from '@/components/form-sheet';
@@ -13,10 +14,69 @@ import { Radius, Spacing } from '@/constants/theme';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
-import { durationSince, formatDateTime, formatDuration, formatPlate, timeAgo, titleCase } from '@/lib/format';
-import { ENTRY_METHODS } from '@/lib/options';
+import { formatDateTime, formatPlate, timeAgo, titleCase } from '@/lib/format';
 import { useForm, Controller } from 'react-hook-form';
 import { transactionStatusMeta } from '@/lib/status';
+
+const EVENT_LABELS: Record<string, string> = {
+  car_in: 'Checked in',
+  check_in: 'Checked in',
+  car_out: 'Checked out',
+  check_out: 'Checked out',
+  space_changed: 'Bay changed',
+  change_space: 'Bay changed',
+  cancelled: 'Cancelled',
+  corrected: 'Corrected',
+  overstay: 'Overstay flagged',
+};
+
+function eventType(event: TransactionEvent) {
+  return event.event_type ?? event.type ?? '';
+}
+
+function eventTitle(event: TransactionEvent) {
+  const description = event.description?.trim();
+  if (description) return description;
+
+  const type = eventType(event);
+  const fallback = titleCase(type);
+  return EVENT_LABELS[type] ?? (fallback || 'Transaction updated');
+}
+
+function eventComment(event: TransactionEvent) {
+  const comment = event.comments?.trim();
+  return comment && comment !== event.description?.trim() ? comment : null;
+}
+
+function minutesBetween(startIso?: string | null, endIso?: string | null) {
+  if (!startIso) return null;
+
+  const start = new Date(startIso).getTime();
+  const end = endIso ? new Date(endIso).getTime() : Date.now();
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return null;
+
+  return Math.floor((end - start) / 60000);
+}
+
+function formatDurationWithDays(minutes?: number | null) {
+  if (minutes == null || minutes < 0) return '—';
+
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  const parts: string[] = [];
+
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (mins > 0 || parts.length === 0) parts.push(`${mins}m`);
+
+  return parts.join(' ');
+}
+
+function transactionDuration(carInAt: string | null, carOutAt: string | null, durationMinutes: number | null, isActive: boolean) {
+  const calculated = minutesBetween(carInAt, isActive ? null : carOutAt);
+  return formatDurationWithDays(calculated ?? durationMinutes);
+}
 
 export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: () => void }) {
   const theme = useTheme();
@@ -53,6 +113,9 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
   const canUpdate = can('operations.transactions', 'update');
   const canCancel = can('operations.transactions', 'delete');
   const canMarkOverstay = can('operations.incidents', 'create') && txn.status === 'active';
+  const events = txn.events ?? [];
+  const duration = transactionDuration(txn.car_in_at, txn.car_out_at, txn.duration_minutes, isActive);
+  const driverCompanyName = txn.driver?.company_name ?? txn.driver_snapshot?.company_name;
 
   return (
     <>
@@ -71,7 +134,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
             <Badge label={titleCase(txn.driver_type)} tone="neutral" />
           </View>
           <Text variant="body" color="textSecondary">
-            {isActive ? `On site ${durationSince(txn.car_in_at)}` : `Stayed ${formatDuration(txn.duration_minutes)}`}
+            {isActive ? `On site ${duration}` : `Stayed ${duration}`}
           </Text>
         </Card>
 
@@ -102,39 +165,46 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
             <View>
               <KeyValue label="Driver" value={txn.driver?.full_name ?? txn.driver_snapshot?.full_name} icon="user" />
               <Divider />
+              <KeyValue label="Company" value={driverCompanyName} icon="building" />
+              <Divider />
               <KeyValue label="Checked in" value={formatDateTime(txn.car_in_at)} icon="carIn" />
               <Divider />
               <KeyValue label="Checked out" value={txn.car_out_at ? formatDateTime(txn.car_out_at) : null} icon="carOut" />
               <Divider />
-              <KeyValue label="Duration" value={txn.duration_minutes != null ? formatDuration(txn.duration_minutes) : durationSince(txn.car_in_at)} icon="clock" />
-              <Divider />
-              <KeyValue label="Entry method" value={titleCase(txn.entry_method ?? '')} />
-              <Divider />
-              <KeyValue label="Contact name" value={txn.contact_name} icon="user" />
+              <KeyValue label="Duration" value={duration} icon="clock" />
               <Divider />
               <KeyValue label="Contact phone" value={txn.contact_phone} icon="phone" />
             </View>
           </Section>
         </Card>
 
-        {txn.events && txn.events.length > 0 ? (
+        {events.length > 0 ? (
           <Card>
             <Section title="Timeline">
               <View style={styles.timeline}>
-                {txn.events.map((e, i) => (
-                  <View key={e.id} style={styles.event}>
-                    <View style={styles.eventRail}>
-                      <View style={[styles.eventDot, { backgroundColor: theme.primary }]} />
-                      {i < txn.events!.length - 1 ? <View style={[styles.eventLine, { backgroundColor: theme.border }]} /> : null}
+                {events.map((e, i) => {
+                  const comment = eventComment(e);
+
+                  return (
+                    <View key={e.id} style={styles.event}>
+                      <View style={styles.eventRail}>
+                        <View style={[styles.eventDot, { backgroundColor: theme.primary }]} />
+                        {i < events.length - 1 ? <View style={[styles.eventLine, { backgroundColor: theme.border }]} /> : null}
+                      </View>
+                      <View style={styles.eventBody}>
+                        <Text variant="bodyStrong">{eventTitle(e)}</Text>
+                        {comment ? (
+                          <Text variant="caption" color="textSecondary">
+                            {comment}
+                          </Text>
+                        ) : null}
+                        <Text variant="caption" color="textMuted">
+                          {timeAgo(e.created_at)}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.eventBody}>
-                      <Text variant="bodyStrong">{e.description}</Text>
-                      <Text variant="caption" color="textMuted">
-                        {timeAgo(e.created_at)}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </Section>
           </Card>
@@ -177,12 +247,11 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
 }
 
 function CheckOutModal({ visible, txnId, onClose, onDone }: { visible: boolean; txnId: number; onClose: () => void; onDone: () => void }) {
-  const [method, setMethod] = useState('manual_entry');
   const [comments, setComments] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => checkOut(txnId, method, comments || undefined),
+    mutationFn: () => checkOut(txnId, 'manual_entry', comments || undefined),
     onSuccess: () => {
       onClose();
       onDone();
@@ -192,7 +261,6 @@ function CheckOutModal({ visible, txnId, onClose, onDone }: { visible: boolean; 
 
   return (
     <FormSheet visible={visible} onClose={onClose} title="Check out vehicle" onSubmit={() => mutation.mutate()} submitting={mutation.isPending} submitLabel="Check out" error={error}>
-      <Select label="Exit method" required value={method} options={ENTRY_METHODS} onChange={setMethod} />
       <TextField label="Comments" placeholder="Optional" multiline value={comments} onChangeText={setComments} style={{ minHeight: 80, textAlignVertical: 'top' }} />
     </FormSheet>
   );
@@ -258,7 +326,10 @@ function ChangeSpaceModal({ visible, txnId, areaId, onClose, onDone }: { visible
       onClose();
       onDone();
     },
-    onError: (e) => setError(toApiError(e).message),
+    onError: (e) => {
+      const err = toApiError(e);
+      setError(err.status === 403 ? "You don't have access to that parking area." : err.message);
+    },
   });
 
   return (

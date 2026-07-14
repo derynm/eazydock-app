@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet, View, type ScrollView } from 'react-native';
 
 import { toApiError } from '@/api/client';
 import { lookupParkingAreas, lookupParkingSpaces, lookupTenants, searchDrivers } from '@/api/lookups';
@@ -10,6 +10,7 @@ import { checkInSchema, type CheckInForm } from '@/api/schemas';
 import { checkIn, searchDriverCompanies, searchVehicles, type CheckInInput } from '@/api/transactions';
 import type { VehicleType } from '@/api/types';
 import { useSession } from '@/auth/session';
+import { FormScrollView } from '@/components/form-error-scroll';
 import { Screen } from '@/components/screen';
 import { AutocompleteField, Banner, Button, Card, IconButton, Section, Select, TextField, type AutocompleteItem } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
@@ -60,6 +61,7 @@ export default function CheckInScreen() {
   const [driverText, setDriverText] = useState('');
   const [driverCompany, setDriverCompany] = useState('');
   const [vehicleType, setVehicleType] = useState<VehicleType | undefined>();
+  const scrollRef = useRef<ScrollView>(null);
 
   const { control, handleSubmit, watch, setValue, getValues, setError } = useForm<CheckInForm>({
     resolver: zodResolver(checkInSchema),
@@ -74,6 +76,12 @@ export default function CheckInScreen() {
   useEffect(() => {
     if (buildingId) setValue('building_id', buildingId);
   }, [buildingId, setValue]);
+
+  useEffect(() => {
+    if (!topError) return;
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [topError]);
 
   const { data: areas = [] } = useQuery({ queryKey: ['lookup-areas', buildingId], queryFn: () => lookupParkingAreas(buildingId), enabled: !!buildingId });
   const { data: spaces = [] } = useQuery({ queryKey: ['lookup-spaces', areaId], queryFn: () => lookupParkingSpaces(areaId, true), enabled: !!areaId });
@@ -101,6 +109,7 @@ export default function CheckInScreen() {
       setValue('tenant_id', p.tenantId ?? null);
       setValue('driver_id', p.driverId ?? null);
       setDriverText(p.driverId ? (p.driverName ?? `Driver #${p.driverId}`) : '');
+      setDriverCompany(p.driverCompanyName ?? '');
       const priorVisit = p.recentVisits.find((v) => v.id !== p.activeTransaction?.id);
       setLookup({
         status: 'found',
@@ -174,7 +183,9 @@ export default function CheckInScreen() {
       const api = toApiError(err);
       setTopError(api.status === 422 ? null : api.message);
       Object.entries(api.errors).forEach(([field, msgs]) => {
-        if (field.startsWith('driver_') && field !== 'driver_id') {
+        // vehicle_id/driver_id (e.g. banned) and driver_name/company fields have
+        // no bound form control on this screen — surface them in the banner instead.
+        if (field.startsWith('driver_') || field === 'vehicle_id') {
           setTopError(msgs[0]);
           return;
         }
@@ -187,14 +198,16 @@ export default function CheckInScreen() {
   return (
     <Screen title="New check-in" onBack={() => router.back()}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
-      <ScrollView
-        contentContainerStyle={[styles.content, !revealed && styles.contentCentered]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}>
-        {topError ? <Banner title="Couldn’t check in" message={topError} tone="danger" /> : null}
+        <FormScrollView
+          ref={scrollRef}
+          style={styles.flex}
+          contentContainerStyle={[styles.content, !revealed && styles.contentCentered]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
+          {topError ? <Banner title="Couldn’t check in" message={topError} tone="danger" /> : null}
 
-        <Card>
-          <Section title="Vehicle">
+          <Card>
+            <Section title="Vehicle">
 
             <Controller
               control={control}
@@ -217,7 +230,6 @@ export default function CheckInScreen() {
                   }}
                   search={async (q) => (await searchVehicles(q)).map((v) => ({ id: v.id, label: v.plate_number }))}
                   onSelect={onPickVehicle}
-                  onEndEditing={runLookup}
                   onSubmitEditing={runLookup}
                   error={fieldState.error?.message}
                   hint={!revealed ? 'Type a plate — matching vehicles appear as you type.' : undefined}
@@ -263,11 +275,11 @@ export default function CheckInScreen() {
             ) : lookup.status === 'new' ? (
               <Banner tone="info" icon="info" title="New vehicle" message="No previous visits for this plate — enter the details below." />
             ) : null}
-          </Section>
-        </Card>
+            </Section>
+          </Card>
 
-        {revealed ? (
-          <>
+          {revealed ? (
+            <>
         <Card>
           <Section title="Location">
             <Controller
@@ -282,9 +294,9 @@ export default function CheckInScreen() {
             <Controller
               control={control}
               name="parking_space_id"
-              render={({ field }) => (
+              render={({ field, fieldState }) => (
                 <Select label="Bay (optional — auto-assigned if blank)" value={field.value ?? null} options={spaces.map((s) => ({ label: s.space_code, value: s.id }))}
-                  onChange={field.onChange} placeholder={areaId ? 'Auto-assign next available' : 'Choose an area first'} disabled={!areaId} />
+                  onChange={field.onChange} error={fieldState.error?.message} placeholder={areaId ? 'Auto-assign next available' : 'Choose an area first'} disabled={!areaId} />
               )}
             />
           </Section>
@@ -346,9 +358,9 @@ export default function CheckInScreen() {
 
 <Button title="Check in vehicle" icon="carIn" size="lg" loading={mutation.isPending} onPress={handleSubmit((v) => mutation.mutate(v))} fullWidth />
         <View style={styles.spacer} />
-          </>
-        ) : null}
-      </ScrollView>
+            </>
+          ) : null}
+        </FormScrollView>
       </KeyboardAvoidingView>
 
       <PlateScanner
@@ -366,9 +378,9 @@ export default function CheckInScreen() {
 
 const styles = StyleSheet.create({
   content: { padding: Spacing.lg, gap: Spacing.lg },
-  contentCentered: { flexGrow: 1, justifyContent: 'center' },
+  contentCentered: { flex: 1, flexGrow: 1, justifyContent: 'center' },
   row: { flexDirection: 'row', gap: Spacing.md },
-summaryRow: {
+  summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,

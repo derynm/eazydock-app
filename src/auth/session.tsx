@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { fetchUser, login as apiLogin, logout as apiLogout } from '@/api/auth';
+import { fetchUser, login as apiLogin, logout as apiLogout, resetPassword as apiResetPassword } from '@/api/auth';
 import { setUnauthorizedHandler } from '@/api/client';
-import type { Building, Company, PermissionMap, User } from '@/api/types';
+import type { Building, Company, PermissionMap, ResetPasswordRequest, User } from '@/api/types';
 import { storage, StorageKeys } from '@/lib/storage';
 
 type Status = 'loading' | 'authed' | 'guest';
@@ -17,6 +17,7 @@ type SessionValue = {
   isSuperAdmin: boolean;
   selectedBuilding: Building | null;
   login: (email: string, password: string) => Promise<void>;
+  resetPassword: (payload: ResetPasswordRequest) => Promise<void>;
   logout: () => Promise<void>;
   switchCompany: (companyId: number) => Promise<void>;
   selectBuilding: (building: Building) => Promise<void>;
@@ -109,6 +110,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await clearSession();
   }, [clearSession]);
 
+  const resetPassword = useCallback(
+    async (payload: ResetPasswordRequest) => {
+      await apiResetPassword(payload);
+      await clearSession();
+    },
+    [clearSession],
+  );
+
   const selectBuilding = useCallback(async (building: Building) => {
     setSelectedBuilding(building);
     await storage.set(StorageKeys.buildingId, String(building.id));
@@ -137,8 +146,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<SessionValue>(
-    () => ({ status, user, companies, activeCompanyId, permissions, isSuperAdmin, selectedBuilding, login, logout, switchCompany, selectBuilding, clearBuilding }),
-    [status, user, companies, activeCompanyId, permissions, isSuperAdmin, selectedBuilding, login, logout, switchCompany, selectBuilding, clearBuilding],
+    () => ({ status, user, companies, activeCompanyId, permissions, isSuperAdmin, selectedBuilding, login, resetPassword, logout, switchCompany, selectBuilding, clearBuilding }),
+    [status, user, companies, activeCompanyId, permissions, isSuperAdmin, selectedBuilding, login, resetPassword, logout, switchCompany, selectBuilding, clearBuilding],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

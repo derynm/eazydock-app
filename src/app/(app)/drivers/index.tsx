@@ -36,6 +36,7 @@ export default function DriversScreen() {
     <Screen
       title="Drivers"
       subtitle={list.total ? `${list.total} total` : undefined}
+      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('people_vehicles.drivers', 'create') ? (
           isTablet ? (

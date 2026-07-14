@@ -31,6 +31,7 @@ export default function UsersScreen() {
     <Screen
       title="Users"
       subtitle={list.total ? `${list.total} total` : undefined}
+      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('administration.users', 'create') ? (
           isTablet ? (

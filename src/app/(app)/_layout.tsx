@@ -1,4 +1,4 @@
-import { Redirect, Slot } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -15,6 +15,17 @@ import { useTheme } from '@/hooks/use-theme';
 import { ShellContext } from '@/shell/shell-context';
 
 const DRAWER_WIDTH = 300;
+
+const contentScreenOptions = {
+  headerShown: false,
+  animation: 'default',
+} as const;
+
+const flowScreenOptions = {
+  headerShown: false,
+  presentation: 'card',
+  animation: 'slide_from_bottom',
+} as const;
 
 export default function AppLayout() {
   const theme = useTheme();
@@ -56,6 +67,13 @@ export default function AppLayout() {
     return <Redirect href="/login" />;
   }
 
+  const contentStack = (
+    <Stack screenOptions={{ ...contentScreenOptions, contentStyle: { backgroundColor: theme.background } }}>
+      <Stack.Screen name="transactions/check-in" options={flowScreenOptions} />
+      <Stack.Screen name="bookings/create" options={flowScreenOptions} />
+    </Stack>
+  );
+
   // Tablet: pinned sidebar (rail when collapsed) beside the content.
   if (isTablet) {
     const sidebarWidth = collapsed ? Layout.sidebarRailWidth : Math.min(Layout.sidebarWidth, width * 0.32);
@@ -66,7 +84,7 @@ export default function AppLayout() {
             <AppSidebar collapsed={collapsed} onToggleCollapse={toggleCollapsed} showCollapseToggle />
           </View>
           <View style={styles.fill}>
-            <Slot />
+            {contentStack}
           </View>
         </View>
       </ShellContext.Provider>
@@ -77,7 +95,7 @@ export default function AppLayout() {
   return (
     <ShellContext.Provider value={shell}>
       <View style={[styles.fill, { backgroundColor: theme.background }]}>
-        <Slot />
+        {contentStack}
         <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { backgroundColor: theme.scrim }, scrimStyle]}>
           <Pressable style={styles.fill} onPress={closeDrawer} accessibilityLabel="Close menu" />
         </Animated.View>

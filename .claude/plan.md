@@ -144,12 +144,15 @@ api.interceptors.response.use(
 Login (email/password)
   └─ POST /api/auth/login
        └─ { token, user }   -> store token -> Dashboard
+Reset password -> POST /api/auth/reset-password -> clear token -> Login
 Logout -> POST /api/auth/logout -> clear token -> Login
 ```
 
 - Store the token in `expo-secure-store`; on app start, `index.tsx` routes to
   Dashboard if a token exists, else Login.
 - On any `401`, clear the token and return to Login.
+- After a successful password reset, clear the local token and return to Login
+  because the backend revokes all of the user's Sanctum tokens.
 
 ### 4.4 Company switching
 
@@ -364,7 +367,7 @@ two layouts share logic and only differ in presentation.
 
 | Method · Path | Notes |
 |---|---|
-| `GET /admin/dashboard` | `{ metrics: {...}, active_vehicles: […] }` (plain array, not `data`-wrapped). `metrics` keys: `buildings, tenants, areas, total_spaces, active_spaces, occupied_spaces, available_spaces, occupancy_percentage, currently_inside, visitor_inside, delivery_inside, today_transactions, today_checkouts, overstay_alerts, open_overstay_incidents, plate_review_required, flexible_allocation_{quota,used,usage_percentage}`. Needs `dashboard,view`. |
+| `GET /admin/dashboard` | `{ metrics: {...}, active_vehicles: { data:[…] } }`. `metrics` keys: `buildings, tenants, areas, total_spaces, active_spaces, occupied_spaces, available_spaces, occupancy_percentage, currently_inside, visitor_inside, delivery_inside, today_transactions, today_checkouts, overstay_alerts, open_overstay_incidents, plate_review_required, flexible_allocation_{quota,used,usage_percentage}`. Needs `dashboard,view`. |
 | `GET /admin/lookups/buildings` | `{ buildings: [{ id, name }] }` |
 | `GET /admin/lookups/parking-areas?building_id=` | `{ parking_areas: [{ id, building_id, name }] }` |
 | `GET /admin/lookups/parking-spaces?parking_area_id=&available_only=1` | `{ parking_spaces: [{ id, building_id, parking_area_id, space_code, occupancy_status }] }` |
@@ -587,6 +590,7 @@ screens reading the transaction still have them.
 | **Transaction detail (existing Phase 1 screen)** | — | new **"Mark overstay"** action → `POST /admin/transactions/{id}/mark-overstay` |
 | **Transactions list (existing Phase 1 screen)** | — | new **"Export"** action → download **Excel** or **PDF** of the current filtered list via `GET /admin/transactions/export?format=excel\|pdf` |
 | **Users** *(pulled forward from Phase 4)* | `GET /admin/users?search=&page=` | create / edit / remove-from-company (`DELETE` only unlinks the user from the active company — the account itself isn't deleted); see §6D for the full, non-trivial contract |
+| **Security / password reset** | — | reset current user's password with old password confirmation via `POST /auth/reset-password`; on success, clear token and return to Login |
 
 **Decision: no parking-area-user assignment management in the app.** There is
 **no** Parking-area users screen and **no** inline assignments editor on the
@@ -615,8 +619,15 @@ scoping decision, not a resurrection of the removed screen.
 ## 6C. API reference (Phase 2 — all live ✅)
 
 All endpoints below are **built, tested and committed**. Same conventions as
-§6A (base URL, headers, token, list envelope, error shapes) — all Phase 2
-routes sit under `/admin` and need both `Authorization` and `X-Company-Id`.
+§6A (base URL, headers, token, list envelope, error shapes). Most Phase 2
+routes sit under `/admin` and need both `Authorization` and `X-Company-Id`; the
+password reset endpoint is auth-only and does **not** need `X-Company-Id`.
+
+### Auth / security
+
+| Method · Path | Action |
+|---|---|
+| `POST /auth/reset-password` | reset current user's password; request `{ old_password*, password*, password_confirmation* }` → `200 { message }`; wrong old password → `422 errors.old_password`; successful reset revokes all of the user's API tokens |
 
 ### Buildings  (`locations.buildings`)
 
@@ -639,7 +650,7 @@ routes sit under `/admin` and need both `Authorization` and `X-Company-Id`.
 
 **Fields / rules:** `building_id`* (must be in company), `name`* (max 150),
 `code` (max 50), `level` (max 50), `area_type`*
-(`standard|visitor|loading|contractor|mixed`), `capacity`* (int, min 0),
+(`standard|visitor|loading|contractor|mixed`), `capacity`* (int, min 1),
 `status`* (`active|inactive|maintenance`), `notes`.
 **Resource:** `{ id, building_id, name, code, level, area_type, capacity, status, notes, created_at, updated_at, building?: { id, name } }`.
 
@@ -651,13 +662,17 @@ routes sit under `/admin` and need both `Authorization` and `X-Company-Id`.
 | `GET /admin/parking-spaces/occupancy-grid?building_id=&parking_area_id=&occupancy_status=&operational_status=` | view | **not paginated** — full result set + summary |
 | `POST /admin/parking-spaces` | create | `building_id` is derived server-side from `parking_area_id` — don't send it |
 | `POST /admin/parking-spaces/bulk` | create | `{ parking_area_id*, prefix*, start_number* (int min 1), count* (int min 1, max 500), space_type*, default_usage*, operational_status* }` → `{ created, skipped }` (skips codes that already exist in that area) |
-| `GET/PUT/DELETE /admin/parking-spaces/{id}` | view/update/delete | — |
+| `GET/PUT/DELETE /admin/parking-spaces/{id}` | view/update/delete | delete can return `422 errors.space` if the space is occupied, has an active transaction, or has a pending/confirmed booking |
 
 **Fields / rules (store/update):** `parking_area_id`* (in company),
 `space_code`* (max 80, unique **within that parking area**), `space_type`*
 (`standard|accessible|ev|motorcycle|loading|visitor`), `default_usage`*
 (`building_owner|tenant|contractor|visitor|delivery|flexible`),
 `operational_status`* (`active|inactive|maintenance|blocked`), `notes`.
+**Delete:** `DELETE /admin/parking-spaces/{id}` soft-deletes the space and
+releases its `space_code` for reuse. It is blocked with `422 errors.space` when
+the space is occupied, has an active transaction, or has a pending/confirmed
+booking.
 **Resource:** `{ id, building_id, parking_area_id, space_code, space_type, default_usage, operational_status, occupancy_status, current_transaction_id, current_vehicle_id, occupied_since, sort_order, notes, created_at, updated_at, building?, parking_area?, current_transaction?: { id, transaction_no, car_in_at, status } | null, current_vehicle?: { id, plate_number } | null }`.
 
 **Occupancy grid response shape:**

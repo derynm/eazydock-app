@@ -1,6 +1,6 @@
-import { api, toApiError, USE_FIXTURES } from './client';
+import { api, ApiError, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { Company, LoginRequest, LoginResponse, UserPayload } from './types';
+import type { Company, LoginRequest, LoginResponse, ResetPasswordRequest, UserPayload } from './types';
 
 export async function login(payload: LoginRequest): Promise<LoginResponse> {
   if (USE_FIXTURES) {
@@ -26,6 +26,25 @@ export async function logout(): Promise<void> {
   }
   try {
     await api.post('/auth/logout');
+  } catch (e) {
+    throw toApiError(e);
+  }
+}
+
+export async function resetPassword(payload: ResetPasswordRequest): Promise<void> {
+  if (USE_FIXTURES) {
+    const errors: Record<string, string[]> = {};
+    if (!payload.old_password) errors.old_password = ['Enter your current password'];
+    if (payload.password.length < 8) errors.password = ['Password must be at least 8 characters'];
+    if (payload.password !== payload.password_confirmation) errors.password_confirmation = ['Password confirmation does not match'];
+    if (Object.keys(errors).length > 0) {
+      throw new ApiError('The given data was invalid.', 422, errors);
+    }
+    await fx.delay(null, 300);
+    return;
+  }
+  try {
+    await api.post('/auth/reset-password', payload);
   } catch (e) {
     throw toApiError(e);
   }

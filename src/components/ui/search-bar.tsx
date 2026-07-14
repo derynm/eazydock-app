@@ -26,7 +26,6 @@ export function SearchBar({ value, onChangeText, placeholder = 'Search…' }: Pr
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"
-        clearButtonMode="while-editing"
       />
       {value.length > 0 ? (
         <IconButton

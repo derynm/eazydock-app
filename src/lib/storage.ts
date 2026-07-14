@@ -47,4 +47,5 @@ export const StorageKeys = {
   companyId: 'active_company_id',
   buildingId: 'selected_building_id',
   buildingName: 'selected_building_name',
+  themeMode: 'theme_mode',
 } as const;

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { useErrorScrollField } from '@/components/form-error-scroll';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -33,10 +34,11 @@ export function Select<T extends string | number>({
 }: Props<T>) {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
+  const errorScrollRef = useErrorScrollField(error);
   const selected = options.find((o) => o.value === value);
 
   return (
-    <View style={styles.field}>
+    <View ref={errorScrollRef} style={styles.field}>
       {label ? (
         <Text variant="label" color="textSecondary">
           {label}

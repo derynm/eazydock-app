@@ -1,6 +1,7 @@
 import { forwardRef, useState } from 'react';
 import { StyleSheet, TextInput, type TextInputProps, View } from 'react-native';
 
+import { useErrorScrollField } from '@/components/form-error-scroll';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -27,11 +28,12 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(!!secure);
+  const errorScrollRef = useErrorScrollField(error);
 
   const borderColor = error ? theme.danger : focused ? theme.primary : theme.border;
 
   return (
-    <View style={styles.field}>
+    <View ref={errorScrollRef} style={styles.field}>
       {label ? (
         <Text variant="label" color="textSecondary">
           {label}

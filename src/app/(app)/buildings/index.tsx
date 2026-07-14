@@ -38,6 +38,7 @@ export default function BuildingsScreen() {
     <Screen
       title="Buildings"
       subtitle={list.total ? `${list.total} total` : undefined}
+      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('locations.buildings', 'create') ? (
           isTablet ? (

@@ -153,7 +153,8 @@ export function DriverForm({ visible, driver, onClose, onDeleted }: Props) {
               onClose();
               onDeleted();
             } catch (e) {
-              setTopError(toApiError(e).message);
+              const err = toApiError(e);
+              setTopError(err.field('driver') ?? err.message);
             }
           }}
         />

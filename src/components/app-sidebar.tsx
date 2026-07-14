@@ -41,6 +41,11 @@ export function AppSidebar({ collapsed = false, onNavigate, onToggleCollapse, sh
     router.replace('/login');
   };
 
+  const openProfile = () => {
+    onNavigate?.();
+    router.navigate('/profile' as never);
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: theme.sidebar }]}>
       <SafeAreaView edges={['top', 'bottom', 'left']} style={styles.safe}>
@@ -119,26 +124,37 @@ export function AppSidebar({ collapsed = false, onNavigate, onToggleCollapse, sh
             <>
               <CompanySwitcher />
               <View style={styles.userRow}>
-                <View style={[styles.userAvatar, { backgroundColor: theme.sidebarAlt }]}>
-                  <Icon name="user" size={22} color={theme.sidebarText} />
-                </View>
-                <View style={styles.userText}>
-                  <Text variant="label" tint={theme.sidebarText} numberOfLines={1}>
-                    {user?.name ?? 'Signed in'}
-                  </Text>
-                  <Text variant="caption" tint={theme.sidebarMuted} numberOfLines={1}>
-                    {user?.email ?? ''}
-                  </Text>
-                </View>
+                <Pressable
+                  onPress={openProfile}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open profile"
+                  style={({ pressed }) => [styles.profileButton, pressed && { opacity: 0.75 }]}>
+                  <View style={[styles.userAvatar, { backgroundColor: theme.sidebarAlt }]}>
+                    <Icon name="user" size={22} color={theme.sidebarText} />
+                  </View>
+                  <View style={styles.userText}>
+                    <Text variant="label" tint={theme.sidebarText} numberOfLines={1}>
+                      {user?.name ?? 'Signed in'}
+                    </Text>
+                    <Text variant="caption" tint={theme.sidebarMuted} numberOfLines={1}>
+                      {user?.email ?? ''}
+                    </Text>
+                  </View>
+                </Pressable>
                 <Pressable hitSlop={8} onPress={handleLogout} style={styles.logoutBtn}>
                   <Icon name="logout" size={20} color={theme.sidebarMuted} />
                 </Pressable>
               </View>
             </>
           ) : (
-            <Pressable onPress={handleLogout} style={[styles.item, styles.itemCollapsed]}>
-              <Icon name="logout" size={21} color={theme.sidebarMuted} />
-            </Pressable>
+            <>
+              <Pressable onPress={openProfile} style={[styles.item, styles.itemCollapsed]}>
+                <Icon name="user" size={21} color={theme.sidebarMuted} />
+              </Pressable>
+              <Pressable onPress={handleLogout} style={[styles.item, styles.itemCollapsed]}>
+                <Icon name="logout" size={21} color={theme.sidebarMuted} />
+              </Pressable>
+            </>
           )}
         </View>
       </SafeAreaView>
@@ -186,6 +202,7 @@ const styles = StyleSheet.create({
   itemLabel: { flex: 1 },
   footer: { padding: Spacing.md, gap: Spacing.md, borderTopWidth: StyleSheet.hairlineWidth },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.xs },
+  profileButton: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   userAvatar: { width: 38, height: 38, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
   userText: { flex: 1, gap: 1 },
   logoutBtn: { padding: 6 },

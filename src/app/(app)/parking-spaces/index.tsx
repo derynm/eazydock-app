@@ -74,6 +74,9 @@ export default function ParkingSpacesScreen() {
     operational_status: opStatus || undefined,
     parking_area_id: areaId || undefined,
   });
+  const handleSpaceDeleted = () => {
+    list.refetch();
+  };
 
   const gridParams = {
     building_id: buildingId ?? undefined,
@@ -111,6 +114,7 @@ export default function ParkingSpacesScreen() {
     <Screen
       title="Parking Spaces"
       subtitle={viewMode === 'list' && list.total ? `${list.total} total` : undefined}
+      subtitleLoading={viewMode === 'list' && (list.isLoading || list.isRefetching)}
       headerRight={
         can('locations.spaces', 'create') ? (
           isTablet ? (
@@ -142,7 +146,7 @@ export default function ParkingSpacesScreen() {
           emptyTitle="No parking spaces found"
           emptyDescription={debounced ? 'Try a different search.' : 'Add spaces or use bulk create.'}
           onOpen={(id) => router.push(`/parking-spaces/${id}` as never)}
-          renderDetail={(id) => <ParkingSpaceDetail key={id} id={id} />}
+          renderDetail={(id) => <ParkingSpaceDetail key={id} id={id} onDeleted={handleSpaceDeleted} />}
           listHeader={listHeader}
           renderRow={(s, { selected, onPress }) => {
             const opMeta = statusMeta(s.operational_status);

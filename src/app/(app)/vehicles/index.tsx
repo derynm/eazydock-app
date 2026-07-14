@@ -40,6 +40,7 @@ export default function VehiclesScreen() {
     <Screen
       title="Vehicles"
       subtitle={list.total ? `${list.total} total` : undefined}
+      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('people_vehicles.vehicles', 'create') ? (
           isTablet ? (

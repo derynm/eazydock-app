@@ -147,7 +147,8 @@ export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () =>
                 qc.invalidateQueries({ queryKey: ['bookings'] });
                 onChanged?.();
               } catch (e) {
-                await confirm({ title: 'Couldn’t delete', message: toApiError(e).message, confirmLabel: 'OK' });
+                const err = toApiError(e);
+                await confirm({ title: 'Couldn’t delete', message: err.field('booking') ?? err.message, confirmLabel: 'OK' });
               }
             }}
           />
@@ -171,7 +172,10 @@ function FulfilModal({ visible, bookingId, onClose, onDone }: { visible: boolean
       onClose();
       onDone();
     },
-    onError: (e) => setError(toApiError(e).message),
+    onError: (e) => {
+      const err = toApiError(e);
+      setError(err.field('booking') ?? err.message);
+    },
   });
 
   return (

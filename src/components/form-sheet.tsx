@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, View, type ScrollView } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { FormScrollView } from '@/components/form-error-scroll';
 import { Banner, Button, IconButton, Text } from '@/components/ui';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useResponsive } from '@/hooks/use-responsive';
@@ -22,6 +23,13 @@ type Props = {
 export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitting, submitLabel = 'Save', error, children }: Props) {
   const theme = useTheme();
   const { isTablet } = useResponsive();
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (!error) return;
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [error]);
 
   const inner = (
     <View style={[styles.card, { backgroundColor: theme.surface }, isTablet && styles.cardTablet, isTablet && (Shadow.lg as object)]}>
@@ -39,10 +47,10 @@ export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitt
         <IconButton name="close" accessibilityLabel="Close" onPress={onClose} color={theme.textSecondary} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <FormScrollView ref={scrollRef} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {error ? <Banner title="Couldn’t save" message={error} tone="danger" /> : null}
         {children}
-      </ScrollView>
+      </FormScrollView>
 
       <View style={[styles.footer, { borderTopColor: theme.border }]}>
         <Button title="Cancel" variant="ghost" onPress={onClose} />

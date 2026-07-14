@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useErrorScrollField } from '@/components/form-error-scroll';
 import { Radius, Spacing } from '@/constants/theme';
 import { useScheme, useTheme } from '@/hooks/use-theme';
 import { formatDateTime } from '@/lib/format';
@@ -25,6 +26,7 @@ export function DateTimeField({ label, value, onChange, error, required }: Props
   const insets = useSafeAreaInsets();
   const [iosOpen, setIosOpen] = useState(false);
   const [draft, setDraft] = useState<Date>(value ? new Date(value) : new Date());
+  const errorScrollRef = useErrorScrollField(error);
 
   const open = () => {
     const base = value ? new Date(value) : new Date();
@@ -50,7 +52,7 @@ export function DateTimeField({ label, value, onChange, error, required }: Props
   };
 
   return (
-    <View style={styles.field}>
+    <View ref={errorScrollRef} style={styles.field}>
       {label ? (
         <Text variant="label" color="textSecondary">
           {label}

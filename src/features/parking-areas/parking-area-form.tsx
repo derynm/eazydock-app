@@ -164,7 +164,8 @@ export function ParkingAreaForm({ visible, area, onClose, onDeleted }: Props) {
               onClose();
               onDeleted();
             } catch (e) {
-              setTopError(toApiError(e).message);
+              const err = toApiError(e);
+              setTopError(err.field('area') ?? err.message);
             }
           }}
         />

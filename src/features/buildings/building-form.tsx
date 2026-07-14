@@ -210,7 +210,8 @@ export function BuildingForm({ visible, building, onClose, onDeleted }: Props) {
               onClose();
               onDeleted();
             } catch (e) {
-              setTopError(toApiError(e).message);
+              const err = toApiError(e);
+              setTopError(err.field('building') ?? err.message);
             }
           }}
         />

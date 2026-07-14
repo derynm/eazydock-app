@@ -39,6 +39,7 @@ export default function TenantsScreen() {
     <Screen
       title="Tenants"
       subtitle={list.total ? `${list.total} total` : undefined}
+      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('locations.tenants', 'create') ? (
           isTablet ? (

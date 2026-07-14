@@ -1,12 +1,13 @@
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, type ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { APP_URL, toApiError, type ApiError } from '@/api/client';
 import { useSession } from '@/auth/session';
 import { BrandMark } from '@/components/brand';
+import { FormScrollView } from '@/components/form-error-scroll';
 import { Banner, Button, Icon, Text, TextField } from '@/components/ui';
 import { Brand, Radius, Spacing } from '@/constants/theme';
 import { useResponsive } from '@/hooks/use-responsive';
@@ -28,6 +29,13 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<ApiError | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (!error) return;
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [error]);
 
   const onSubmit = async () => {
     setError(null);
@@ -150,12 +158,13 @@ export default function Login() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.formSide}>
         <SafeAreaView style={styles.formSafe}>
-          <ScrollView
+          <FormScrollView
+            ref={scrollRef}
             contentContainerStyle={styles.scroll}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
             {form}
-          </ScrollView>
+          </FormScrollView>
         </SafeAreaView>
       </KeyboardAvoidingView>
     </View>
