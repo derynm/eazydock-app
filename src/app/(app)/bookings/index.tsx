@@ -5,9 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Modal,
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -15,20 +13,37 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { listBookingsBySpace } from '@/api/bookings';
+import { listBookings, listBookingsBySpace } from '@/api/bookings';
 import { lookupParkingAreas } from '@/api/lookups';
 import type { Booking, BookingsBySpaceGroup, SpaceStatus } from '@/api/types';
+import { useSession } from '@/auth/session';
+import { ResponsiveListDetail } from '@/components/responsive-list-detail';
 import { Screen } from '@/components/screen';
-import { Banner, Button, FilterSheet, IconButton, SearchBar, Segmented, Select, Text } from '@/components/ui';
+import {
+  Badge,
+  Banner,
+  Button,
+  FilterSheet,
+  Icon,
+  IconButton,
+  ListRow,
+  PickerSheetModal,
+  SearchBar,
+  Segmented,
+  Select,
+  Text,
+  ViewModeToggle,
+  type ViewMode,
+} from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
+import { BookingDetail } from '@/features/bookings/booking-detail';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { usePaginatedList } from '@/hooks/use-paginated-list';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useResponsive } from '@/hooks/use-responsive';
 import { useScheme, useTheme } from '@/hooks/use-theme';
-import { useSession } from '@/auth/session';
 import { formatPlate, formatTime } from '@/lib/format';
+import { statusMeta } from '@/lib/status';
 
 // ── Date helpers ──────────────────────────────────────────────────────
 function toISODate(d: Date): string {
@@ -53,11 +68,20 @@ function formatNavDate(d: Date): string {
   return label;
 }
 
-const FILTERS = [
+const BOARD_FILTERS = [
   { value: '', label: 'All' },
   { value: 'available', label: 'Available' },
   { value: 'booked', label: 'Booked' },
   { value: 'occupied', label: 'Occupied' },
+] as const;
+
+const LIST_FILTERS = [
+  { value: '', label: 'All' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'fulfilled', label: 'Fulfilled' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'expired', label: 'Expired' },
 ] as const;
 
 // ── Grid geometry ─────────────────────────────────────────────────────
@@ -275,7 +299,6 @@ export default function BookingsScreen() {
   const router = useRouter();
   const theme = useTheme();
   const scheme = useScheme();
-  const insets = useSafeAreaInsets();
   const { can } = usePermissions();
   const { isTablet } = useResponsive();
   const { selectedBuilding } = useSession();
@@ -283,6 +306,7 @@ export default function BookingsScreen() {
   const vScrollRef = useRef<ScrollView>(null);
   const headerHRef = useRef<ScrollView>(null);
   const bodyHRef = useRef<ScrollView>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [areaId, setAreaId] = useState<number | null>(null);
@@ -304,7 +328,6 @@ export default function BookingsScreen() {
 
   const {
     data: groups = [],
-    isLoading,
     isError,
     error,
     refetch,
@@ -318,17 +341,36 @@ export default function BookingsScreen() {
       parking_area_id: areaId || undefined,
       search: debounced || undefined,
     }),
+    enabled: viewMode === 'cards',
   });
+
+  const bookingList = usePaginatedList(
+    ['bookings-list', selectedBuilding?.id],
+    listBookings,
+    {
+      search: debounced || undefined,
+      status: status || undefined,
+      building_id: selectedBuilding?.id,
+      parking_area_id: areaId || undefined,
+      date_from: dateStr,
+      date_to: dateStr,
+    },
+    { enabled: viewMode === 'table' },
+  );
 
   const sortedGroups = [...groups].sort((a, b) =>
     a.space_code.localeCompare(b.space_code, undefined, { numeric: true, sensitivity: 'base' }),
   );
-  const totalBookings = groups.reduce((sum, g) => sum + g.bookings.length, 0);
   const count = sortedGroups.length;
   const availableW = screenWidth - TIME_COL_W;
   const colW = count > 0 && count * CELL_W < availableW
     ? Math.floor(availableW / count)
     : CELL_W;
+
+  const changeViewMode = (next: ViewMode) => {
+    setStatus('');
+    setViewMode(next);
+  };
 
   const goToDate = (d: Date) => {
     setSelectedDate(d);
@@ -367,8 +409,6 @@ export default function BookingsScreen() {
   return (
     <Screen
       title="Bookings"
-      subtitle={count ? `${count} spaces · ${totalBookings} booking${totalBookings === 1 ? '' : 's'}` : undefined}
-      subtitleLoading={isLoading || isRefetching}
       headerRight={
         <View style={styles.headerActions}>
           <View>
@@ -388,93 +428,161 @@ export default function BookingsScreen() {
         {/* Date navigation */}
         <View style={[styles.dateNav, { borderBottomColor: theme.border }]}>
           <IconButton name="chevronLeft" accessibilityLabel="Previous day" onPress={() => goToDate(addDays(selectedDate, -1))} />
-          <TouchableOpacity onPress={() => goToDate(new Date())} style={styles.dateLabel}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={isTablet ? 'Go to today' : 'Choose date'}
+            onPress={isTablet ? () => goToDate(new Date()) : openDatePicker}
+            style={styles.dateLabel}>
             <Text variant="subtitle" numberOfLines={1}>{formatNavDate(selectedDate)}</Text>
           </TouchableOpacity>
           <IconButton name="chevronRight" accessibilityLabel="Next day" onPress={() => goToDate(addDays(selectedDate, 1))} />
-          <IconButton name="bookings" accessibilityLabel="Choose date" onPress={openDatePicker} />
+          {isTablet ? (
+            <IconButton name="bookings" accessibilityLabel="Choose date" onPress={openDatePicker} />
+          ) : null}
+          <ViewModeToggle
+            value={viewMode}
+            onChange={changeViewMode}
+            cardsIcon="bookings"
+            tableIcon="listView"
+            cardsLabel="Calendar view"
+            tableLabel="List view"
+          />
         </View>
 
-        <Legend />
+        {viewMode === 'cards' ? (
+          <>
+            <Legend />
 
-        {isError ? (
-          <Banner title="Couldn’t load bookings" message={error?.message} tone="danger" actionLabel="Retry" onAction={refetch} />
-        ) : null}
+            {isError ? (
+              <Banner title="Couldn’t load bookings" message={error?.message} tone="danger" actionLabel="Retry" onAction={refetch} />
+            ) : null}
 
-        {/* Fixed column headers — one per parking space, scrolls horizontally in sync */}
-        <View style={[styles.headRow, { borderBottomColor: theme.border }]}>
-          <View style={[styles.timespacer, { borderRightColor: theme.borderStrong }]} />
-          <ScrollView
-            ref={headerHRef}
-            horizontal
-            scrollEnabled={false}
-            showsHorizontalScrollIndicator={false}>
-            <View style={{ flexDirection: 'row' }}>
-              {sortedGroups.map((g) => <ColHeader key={g.parking_space_id} group={g} colW={colW} />)}
-            </View>
-          </ScrollView>
-        </View>
-
-        {/* Time grid — vertical scroll */}
-        <ScrollView
-          ref={vScrollRef}
-          style={styles.scroll}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.primary} />
-          }>
-          <View style={{ flexDirection: 'row' }}>
-            {/* Fixed time labels column */}
-            <View style={[styles.timeline, { borderRightColor: theme.borderStrong }]}>
-              {HOURS.map((h) => (
-                <View
-                  key={h}
-                  style={[
-                    styles.timeCell,
-                    { height: ROW_H, backgroundColor: isToday && h === nowHour ? theme.primarySoft : 'transparent' },
-                  ]}>
-                  <Text variant="caption" color="textMuted">{fullHourLabel(h)}</Text>
+            {/* Fixed column headers — one per parking space, scrolls horizontally in sync */}
+            <View style={[styles.headRow, { borderBottomColor: theme.border }]}>
+              <View style={[styles.timespacer, { borderRightColor: theme.borderStrong }]} />
+              <ScrollView
+                ref={headerHRef}
+                horizontal
+                scrollEnabled={false}
+                showsHorizontalScrollIndicator={false}>
+                <View style={{ flexDirection: 'row' }}>
+                  {sortedGroups.map((g) => <ColHeader key={g.parking_space_id} group={g} colW={colW} />)}
                 </View>
-              ))}
+              </ScrollView>
             </View>
 
-            {/* Space columns — horizontal scroll synced with header */}
+            {/* Time grid — vertical scroll */}
             <ScrollView
-              ref={bodyHRef}
-              horizontal
-              style={{ flex: 1 }}
-              onScroll={onBodyScroll}
-              scrollEventThrottle={16}
-              showsHorizontalScrollIndicator={false}>
-              <View style={{ flexDirection: 'row', minWidth: availableW }}>
-                {sortedGroups.map((g) => (
-                  <GridColumn
-                    key={g.parking_space_id}
-                    group={g}
-                    colW={colW}
-                    selectedDate={selectedDate}
-                    isToday={isToday}
-                    nowHour={nowHour}
-                    onPressBooking={(booking) => router.push(`/bookings/${booking.id}`)}
-                  />
-                ))}
+              ref={vScrollRef}
+              style={styles.scroll}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.primary} />
+              }>
+              <View style={{ flexDirection: 'row' }}>
+                {/* Fixed time labels column */}
+                <View style={[styles.timeline, { borderRightColor: theme.borderStrong }]}>
+                  {HOURS.map((h) => (
+                    <View
+                      key={h}
+                      style={[
+                        styles.timeCell,
+                        { height: ROW_H, backgroundColor: isToday && h === nowHour ? theme.primarySoft : 'transparent' },
+                      ]}>
+                      <Text variant="caption" color="textMuted">{fullHourLabel(h)}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Space columns — horizontal scroll synced with header */}
+                <ScrollView
+                  ref={bodyHRef}
+                  horizontal
+                  style={{ flex: 1 }}
+                  onScroll={onBodyScroll}
+                  scrollEventThrottle={16}
+                  showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', minWidth: availableW }}>
+                    {sortedGroups.map((g) => (
+                      <GridColumn
+                        key={g.parking_space_id}
+                        group={g}
+                        colW={colW}
+                        selectedDate={selectedDate}
+                        isToday={isToday}
+                        nowHour={nowHour}
+                        onPressBooking={(booking) => router.push(`/bookings/${booking.id}`)}
+                      />
+                    ))}
+                  </View>
+                </ScrollView>
               </View>
             </ScrollView>
-          </View>
-        </ScrollView>
+          </>
+        ) : (
+          <ResponsiveListDetail
+            items={bookingList.items}
+            getId={(booking) => booking.id}
+            loading={bookingList.isLoading}
+            errorMessage={bookingList.isError ? bookingList.error?.message : undefined}
+            onRetry={bookingList.refetch}
+            refreshing={bookingList.isRefetching}
+            onRefresh={bookingList.refetch}
+            onEndReached={() => bookingList.hasNextPage && bookingList.fetchNextPage()}
+            loadingMore={bookingList.isFetchingNextPage}
+            emptyTitle="No bookings found"
+            emptyDescription={debounced || status ? 'Try adjusting your filters.' : 'Bookings for this day will appear here.'}
+            onOpen={(id) => router.push(`/bookings/${id}`)}
+            renderDetail={(id) => (
+              <BookingDetail key={id} id={id} onChanged={() => void bookingList.refetch()} />
+            )}
+            renderRow={(booking, { selected, onPress }) => {
+              const meta = statusMeta(booking.status);
+              const space = booking.parking_space?.space_code ?? 'Unassigned bay';
+              const contact = booking.driver?.full_name ?? booking.contact_name ?? booking.tenant?.name;
+
+              return (
+                <ListRow
+                  title={formatPlate(booking.plate_number_raw)}
+                  subtitle={`${formatTime(booking.starts_at)}–${formatTime(booking.ends_at)} · ${space}`}
+                  meta={contact ?? undefined}
+                  selected={selected}
+                  onPress={onPress}
+                  leading={
+                    <View style={[styles.listIcon, { backgroundColor: theme.primarySoft }]}>
+                      <Icon name="bookings" size={20} color={theme.primary} />
+                    </View>
+                  }
+                  trailing={
+                    <View style={styles.listTrail}>
+                      <Badge label={meta.label} tone={meta.tone} size="sm" dot />
+                      <Text variant="caption" color="textMuted">
+                        {booking.booking_no}
+                      </Text>
+                    </View>
+                  }
+                />
+              );
+            }}
+          />
+        )}
       </View>
 
       <FilterSheet visible={showFilter} onClose={() => setShowFilter(false)} title="Filter bookings">
         <SearchBar value={search} onChangeText={setSearch} placeholder="Search plate, ref, contact…" />
         <Select value={areaId ?? 0} options={areaOptions} onChange={(v) => setAreaId((v as number) || null)} placeholder="All areas" />
-        <Segmented scrollable options={FILTERS as never} value={status} onChange={setStatus} />
+        <Segmented
+          scrollable
+          options={(viewMode === 'cards' ? BOARD_FILTERS : LIST_FILTERS) as never}
+          value={status}
+          onChange={setStatus}
+        />
       </FilterSheet>
 
       {Platform.OS === 'ios' ? (
-        <Modal visible={iosDateOpen} transparent animationType="fade" onRequestClose={() => setIosDateOpen(false)}>
-          <View style={[styles.scrim, { backgroundColor: theme.scrim }]}>
-            <Pressable style={styles.backdrop} onPress={() => setIosDateOpen(false)} />
-            <View style={[styles.sheet, { backgroundColor: theme.surface, paddingBottom: Spacing.lg + insets.bottom }]}>
+        <PickerSheetModal visible={iosDateOpen} onClose={() => setIosDateOpen(false)}>
+          {(dismiss) => (
+            <>
               <DateTimePicker
                 value={draftDate}
                 mode="date"
@@ -488,13 +596,13 @@ export default function BookingsScreen() {
                 icon="check"
                 onPress={() => {
                   goToDate(draftDate);
-                  setIosDateOpen(false);
+                  dismiss();
                 }}
                 fullWidth
               />
-            </View>
-          </View>
-        </Modal>
+            </>
+          )}
+        </PickerSheetModal>
       ) : null}
     </Screen>
   );
@@ -506,6 +614,8 @@ const styles = StyleSheet.create({
 
   // Header actions row (filter + add)
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  listIcon: { width: 44, height: 44, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  listTrail: { alignItems: 'flex-end', gap: Spacing.xs },
   filterDot: {
     position: 'absolute',
     top: 7,
@@ -590,9 +700,5 @@ const styles = StyleSheet.create({
     lineHeight: BLOCK_LINE_H,
   },
 
-  // Date picker sheet (iOS)
-  scrim: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  sheet: { padding: Spacing.lg, gap: Spacing.md, borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg },
-  picker: { width: '100%', height: 216 },
+  picker: { width: '100%', maxWidth: 320, height: 216, alignSelf: 'center' },
 });

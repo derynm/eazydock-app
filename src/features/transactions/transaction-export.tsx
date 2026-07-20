@@ -3,14 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import * as Device from 'expo-device';
 import { isAvailableAsync, shareAsync } from 'expo-sharing';
 import { useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { toApiError } from '@/api/client';
 import { lookupParkingAreas } from '@/api/lookups';
 import { exportTransactions, type ExportFormat } from '@/api/transactions';
 import type { ListParams } from '@/api/types';
-import { Button, FilterSheet, Icon, Segmented, Select, Text } from '@/components/ui';
+import { Button, FilterSheet, Icon, PickerSheetModal, Segmented, Select, Text } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { useScheme, useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
@@ -57,7 +56,6 @@ function DateField({
 }) {
   const theme = useTheme();
   const scheme = useScheme();
-  const insets = useSafeAreaInsets();
   const [iosOpen, setIosOpen] = useState(false);
   const [draft, setDraft] = useState<Date>(value ? new Date(value) : new Date());
 
@@ -98,10 +96,9 @@ function DateField({
       </Pressable>
 
       {Platform.OS === 'ios' ? (
-        <Modal visible={iosOpen} transparent animationType="fade" onRequestClose={() => setIosOpen(false)}>
-          <View style={[styles.scrim, { backgroundColor: theme.scrim }]}>
-            <Pressable style={styles.backdrop} onPress={() => setIosOpen(false)} />
-            <View style={[styles.sheet, { backgroundColor: theme.surface, paddingBottom: Spacing.lg + insets.bottom }]}>
+        <PickerSheetModal visible={iosOpen} onClose={() => setIosOpen(false)}>
+          {(dismiss) => (
+            <>
               <DateTimePicker
                 value={draft}
                 mode="date"
@@ -115,13 +112,13 @@ function DateField({
                 icon="check"
                 onPress={() => {
                   onChange(toISODate(draft));
-                  setIosOpen(false);
+                  dismiss();
                 }}
                 fullWidth
               />
-            </View>
-          </View>
-        </Modal>
+            </>
+          )}
+        </PickerSheetModal>
       ) : null}
     </View>
   );
@@ -226,7 +223,7 @@ export function TransactionExportSheet({ visible, onClose, buildingId, initialSt
   };
 
   return (
-    <FilterSheet visible={visible} onClose={onClose} title="Export transactions">
+    <FilterSheet visible={visible} onClose={onClose} title="Export Activity">
       <View style={styles.field}>
         <Text variant="label" color="textSecondary">
           Format
@@ -306,10 +303,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingHorizontal: Spacing.md,
     borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
-  scrim: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  sheet: { padding: Spacing.lg, gap: Spacing.md, borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg },
-  picker: { width: '100%', height: 216 },
+  picker: { width: '100%', maxWidth: 320, height: 216, alignSelf: 'center' },
 });

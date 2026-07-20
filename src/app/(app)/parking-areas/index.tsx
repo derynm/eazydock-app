@@ -49,8 +49,6 @@ export default function ParkingAreasScreen() {
   return (
     <Screen
       title="Parking Areas"
-      subtitle={list.total ? `${list.total} total` : undefined}
-      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('locations.parking_areas', 'create') ? (
           isTablet ? (

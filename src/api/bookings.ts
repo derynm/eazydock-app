@@ -1,6 +1,6 @@
 import { api, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { Booking, BookingsBySpaceGroup, BookingsBySpaceResponse, Building, DriverType, ParkingArea, ParkingSpace, SpaceStatus, Tenant } from './types';
+import type { Booking, BookingsBySpaceGroup, BookingsBySpaceResponse, Building, DriverType, ListParams, Paginator, ParkingArea, ParkingSpace, SpaceStatus, Tenant } from './types';
 
 export type BookingInput = {
   building_id: number;
@@ -35,6 +35,42 @@ export type BookingsBySpaceParams = {
   parking_area_id?: number;
   search?: string;
 };
+
+export async function listBookings(params: ListParams = {}): Promise<Paginator<Booking>> {
+  if (USE_FIXTURES) {
+    const query = String(params.search ?? '').toLowerCase();
+    const rows = fx.bookings
+      .filter((booking) => {
+        const startsOn = booking.starts_at.slice(0, 10);
+        const matchesSearch =
+          !query ||
+          booking.booking_no.toLowerCase().includes(query) ||
+          booking.plate_number_raw.toLowerCase().includes(query) ||
+          (booking.contact_name ?? '').toLowerCase().includes(query) ||
+          (booking.driver?.full_name ?? '').toLowerCase().includes(query) ||
+          (booking.tenant?.name ?? '').toLowerCase().includes(query);
+
+        return (
+          matchesSearch &&
+          (!params.status || booking.status === params.status) &&
+          (!params.building_id || booking.building_id === Number(params.building_id)) &&
+          (!params.parking_area_id || booking.parking_area_id === Number(params.parking_area_id)) &&
+          (!params.date_from || startsOn >= String(params.date_from)) &&
+          (!params.date_to || startsOn <= String(params.date_to))
+        );
+      })
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+
+    return fx.delay(fx.paginate(rows, Number(params.page) || 1));
+  }
+
+  try {
+    const { data } = await api.get<Paginator<Booking>>('/admin/bookings', { params });
+    return data;
+  } catch (e) {
+    throw toApiError(e);
+  }
+}
 
 /** One row per parking space — occupied/booked spaces carry their booking(s), available spaces are returned empty. */
 export async function listBookingsBySpace(params: BookingsBySpaceParams): Promise<BookingsBySpaceGroup[]> {

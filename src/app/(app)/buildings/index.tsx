@@ -10,6 +10,7 @@ import { Radius } from '@/constants/theme';
 import { BuildingDetail } from '@/features/buildings/building-detail';
 import { BuildingForm } from '@/features/buildings/building-form';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useListFilterCounts } from '@/hooks/use-list-filter-counts';
 import { usePaginatedList } from '@/hooks/use-paginated-list';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useResponsive } from '@/hooks/use-responsive';
@@ -33,12 +34,16 @@ export default function BuildingsScreen() {
   const debounced = useDebouncedValue(search);
 
   const list = usePaginatedList(['buildings'], listBuildings, { search: debounced, status: status || undefined });
+  const counts = useListFilterCounts({
+    baseKey: ['buildings'],
+    fetcher: listBuildings,
+    params: { search: debounced },
+    values: FILTERS.map((filter) => filter.value),
+  });
 
   return (
     <Screen
       title="Buildings"
-      subtitle={list.total ? `${list.total} total` : undefined}
-      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('locations.buildings', 'create') ? (
           isTablet ? (
@@ -65,7 +70,12 @@ export default function BuildingsScreen() {
         listHeader={
           <View style={{ gap: 12 }}>
             <SearchBar value={search} onChangeText={setSearch} placeholder="Search name or code…" />
-            <Segmented scrollable options={FILTERS as never} value={status} onChange={setStatus} />
+            <Segmented
+              scrollable
+              options={FILTERS.map((filter) => ({ ...filter, count: counts[filter.value] })) as never}
+              value={status}
+              onChange={setStatus}
+            />
           </View>
         }
         renderRow={(b, { selected, onPress }) => {

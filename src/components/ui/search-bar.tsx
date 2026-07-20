@@ -48,7 +48,7 @@ const styles = StyleSheet.create({
     paddingRight: Spacing.xs,
     height: 44,
     borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   input: { flex: 1, fontFamily: Fonts.sans, fontSize: 15, fontWeight: '400', paddingVertical: 0 },
 });

@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Transaction } from '@/api/types';
 import { Badge, Button, EmptyState, Skeleton, Text } from '@/components/ui';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useResponsive } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { durationSince, formatDuration, formatPlate } from '@/lib/format';
@@ -36,7 +36,7 @@ type Props = {
   onCheckOut: (transaction: Transaction) => Promise<void>;
 };
 
-const TABLE_WIDTH = 990;
+const TABLE_WIDTH = 992;
 
 export function TransactionTable({
   items,
@@ -56,15 +56,17 @@ export function TransactionTable({
 }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { height } = useResponsive();
+  const { height, isPhone } = useResponsive();
   const [checkingOutId, setCheckingOutId] = useState<number | null>(null);
   const [rootHeight, setRootHeight] = useState(0);
   const [toolbarHeight, setToolbarHeight] = useState(0);
   const visibleRows = loading && items.length === 0 ? 8 : items.length;
+  const rowHeight = isPhone ? 54 : 56;
+  const headerHeight = isPhone ? 38 : 42;
   const naturalHeight =
     items.length === 0 && !loading
       ? 320
-      : 42 + Math.max(visibleRows, 1) * 56 + (loadingMore ? 48 : 0);
+      : headerHeight + Math.max(visibleRows, 1) * rowHeight + (loadingMore ? 48 : 0);
   const measuredSpace = rootHeight > 0 ? rootHeight - toolbarHeight - Spacing.md - insets.bottom : height - 230;
   const tableHeight = Math.min(naturalHeight, Math.max(180, measuredSpace));
 
@@ -88,7 +90,11 @@ export function TransactionTable({
         horizontal
         directionalLockEnabled
         style={styles.horizontal}
-        contentContainerStyle={[styles.horizontalContent, { paddingBottom: Spacing.md + insets.bottom }]}
+        contentContainerStyle={[
+          styles.horizontalContent,
+          isPhone && styles.horizontalContentPhone,
+          { paddingBottom: Spacing.md + insets.bottom },
+        ]}
         showsHorizontalScrollIndicator>
         <View
           style={[
@@ -97,10 +103,16 @@ export function TransactionTable({
               width: TABLE_WIDTH,
               height: tableHeight,
               backgroundColor: theme.surface,
-              borderColor: theme.borderStrong,
+              borderColor: theme.border,
             },
+            Shadow.xs as object,
           ]}>
-          <View style={[styles.header, { backgroundColor: theme.surfaceSunken, borderBottomColor: theme.border }]}>
+          <View
+            style={[
+              styles.header,
+              isPhone && styles.headerPhone,
+              { backgroundColor: theme.surface, borderBottomColor: theme.border },
+            ]}>
             <HeaderCell label="Reference" width={135} />
             <HeaderCell label="Plate" width={115} />
             <HeaderCell label="Driver" width={180} />
@@ -129,6 +141,7 @@ export function TransactionTable({
               renderItem={({ item }) => (
                 <TransactionTableRow
                   transaction={item}
+                  compact={isPhone}
                   canCheckOut={canCheckOut}
                   checkingOut={checkingOutId === item.id}
                   onPress={() => onOpen(item.id)}
@@ -157,7 +170,7 @@ export function TransactionTable({
 function HeaderCell({ label, width, align }: { label: string; width: number; align?: 'left' | 'right' }) {
   return (
     <View style={[styles.cell, { width }, align === 'right' && styles.alignRight]}>
-      <Text variant="overline" color="textMuted">
+      <Text variant="label" color="textSecondary">
         {label}
       </Text>
     </View>
@@ -166,12 +179,14 @@ function HeaderCell({ label, width, align }: { label: string; width: number; ali
 
 function TransactionTableRow({
   transaction,
+  compact,
   canCheckOut,
   checkingOut,
   onPress,
   onCheckOut,
 }: {
   transaction: Transaction;
+  compact?: boolean;
   canCheckOut: boolean;
   checkingOut: boolean;
   onPress: () => void;
@@ -189,6 +204,7 @@ function TransactionTableRow({
       onPress={onPress}
       style={(state) => [
         styles.row,
+        compact && styles.rowCompact,
         { borderBottomColor: theme.border },
         state.pressed && { backgroundColor: theme.surfaceSunken },
       ]}>
@@ -254,8 +270,9 @@ const styles = StyleSheet.create({
   toolbar: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md },
   horizontal: { flexGrow: 0 },
   horizontalContent: { minWidth: '100%', paddingHorizontal: Spacing.lg, paddingBottom: Spacing.xxl },
+  horizontalContentPhone: { paddingHorizontal: Spacing.md },
   table: {
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderRadius: Radius.lg,
     overflow: 'hidden',
   },
@@ -264,14 +281,16 @@ const styles = StyleSheet.create({
     minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
   },
+  headerPhone: { minHeight: 38 },
   row: {
     minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  rowCompact: { minHeight: 54 },
   cell: { paddingHorizontal: Spacing.md, justifyContent: 'center' },
   alignRight: { alignItems: 'flex-end' },
   actionCell: { paddingHorizontal: Spacing.sm, alignItems: 'flex-end', justifyContent: 'center' },

@@ -20,13 +20,15 @@ type Props<T extends string> = {
   onChange: (value: T) => void;
   /** Scrollable pill row (good for many filters) vs. equal-width track. */
   scrollable?: boolean;
+  /** Use the brand color for the selected equal-width segment. */
+  activeTone?: 'surface' | 'primary';
 };
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const TRACK_PADDING = 3;
 const TRACK_GAP = 3;
 
-export function Segmented<T extends string>({ options, value, onChange, scrollable }: Props<T>) {
+export function Segmented<T extends string>({ options, value, onChange, scrollable, activeTone = 'surface' }: Props<T>) {
   const theme = useTheme();
   const [trackWidth, setTrackWidth] = useState(0);
   const activeIndex = Math.max(0, options.findIndex((opt) => opt.value === value));
@@ -64,12 +66,28 @@ export function Segmented<T extends string>({ options, value, onChange, scrollab
         key={opt.value}
         onPress={() => onChange(opt.value)}
         style={styles.item}>
-        <Text
-          variant="label"
-          tint={active ? theme.text : theme.textSecondary}>
-          {opt.label}
-          {opt.count != null ? `  ${opt.count}` : ''}
-        </Text>
+        <View style={styles.itemContent}>
+          <Text
+            variant="label"
+            tint={active ? (activeTone === 'primary' ? theme.onPrimary : theme.text) : theme.textSecondary}>
+            {opt.label}
+          </Text>
+          {opt.count != null ? (
+            <View
+              style={[
+                styles.countBadge,
+                !active && styles.countBadgeInactive,
+                { backgroundColor: active ? theme.surface : 'transparent' },
+              ]}>
+              <Text
+                variant="caption"
+                tint={active && activeTone === 'primary' ? theme.primary : theme.textSecondary}
+                style={styles.countText}>
+                {opt.count}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </Pressable>
     );
   });
@@ -91,7 +109,12 @@ export function Segmented<T extends string>({ options, value, onChange, scrollab
       style={[styles.track, { backgroundColor: theme.surfaceSunken }]}>
       <Animated.View
         pointerEvents="none"
-        style={[styles.indicator, styles.elevated, { backgroundColor: theme.surface }, indicatorStyle]}
+        style={[
+          styles.indicator,
+          styles.elevated,
+          { backgroundColor: activeTone === 'primary' ? theme.primary : theme.surface },
+          indicatorStyle,
+        ]}
       />
       {items}
     </View>
@@ -123,12 +146,26 @@ function ScrollableSegmentItem<T extends string>({
     <AnimatedPressable
       onPress={onPress}
       style={[styles.item, styles.itemPill, animatedStyle]}>
-      <Text
-        variant="label"
-        tint={active ? theme.onPrimary : theme.textSecondary}>
-        {option.label}
-        {option.count != null ? `  ${option.count}` : ''}
-      </Text>
+      <View style={styles.itemContent}>
+        <Text variant="label" tint={active ? theme.onPrimary : theme.textSecondary}>
+          {option.label}
+        </Text>
+        {option.count != null ? (
+          <View
+            style={[
+              styles.countBadge,
+              !active && styles.countBadgeInactive,
+              { backgroundColor: active ? theme.surface : 'transparent' },
+            ]}>
+            <Text
+              variant="caption"
+              tint={active ? theme.primary : theme.textSecondary}
+              style={styles.countText}>
+              {option.count}
+            </Text>
+          </View>
+        ) : null}
+      </View>
     </AnimatedPressable>
   );
 }
@@ -151,6 +188,17 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     zIndex: 1,
   },
+  itemContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+  countBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 4,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countBadgeInactive: { minWidth: 0, height: 'auto', paddingHorizontal: 0 },
+  countText: { fontSize: 10, lineHeight: 12 },
   itemPill: {
     flex: 0,
     paddingHorizontal: Spacing.lg,

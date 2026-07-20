@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingHorizontal: Spacing.md,
     borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   input: { flex: 1, fontFamily: Fonts.sans, fontSize: 15, fontWeight: '400', paddingVertical: Spacing.md },
 });

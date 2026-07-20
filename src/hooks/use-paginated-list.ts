@@ -11,6 +11,7 @@ export function usePaginatedList<T>(
   baseKey: readonly unknown[],
   fetcher: (params: ListParams) => Promise<Paginator<T>>,
   params: ListParams,
+  options: { enabled?: boolean } = {},
 ) {
   const { activeCompanyId } = useSession();
 
@@ -18,6 +19,7 @@ export function usePaginatedList<T>(
     queryKey: [...baseKey, activeCompanyId, params],
     queryFn: ({ pageParam }) => fetcher({ ...params, page: pageParam }),
     initialPageParam: 1,
+    enabled: options.enabled ?? true,
     getNextPageParam: (last) =>
       last.meta.current_page < last.meta.last_page ? last.meta.current_page + 1 : undefined,
   });

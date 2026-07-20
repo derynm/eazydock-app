@@ -1,73 +1,58 @@
-import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-import { Icon } from './icon';
+import { Icon, type IconName } from './icon';
 
 export type ViewMode = 'cards' | 'table';
 
 type Props = {
   value: ViewMode;
   onChange: (value: ViewMode) => void;
+  cardsIcon?: IconName;
+  tableIcon?: IconName;
+  cardsLabel?: string;
+  tableLabel?: string;
 };
 
-export function ViewModeToggle({ value, onChange }: Props) {
+export function ViewModeToggle({
+  value,
+  onChange,
+  cardsIcon = 'listView',
+  tableIcon = 'tableView',
+  cardsLabel = 'Card view',
+  tableLabel = 'Table view',
+}: Props) {
   const theme = useTheme();
-  const activeIndex = value === 'cards' ? 0 : 1;
-  const progress = useSharedValue(activeIndex);
-
-  useEffect(() => {
-    progress.value = withSpring(activeIndex, { damping: 18, stiffness: 220 });
-  }, [activeIndex, progress]);
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: 3 + progress.value * 40 }],
-  }));
-  const cardIconStyle = useAnimatedStyle(() => {
-    const selected = 1 - Math.min(1, Math.abs(progress.value));
-    return {
-      opacity: 0.65 + selected * 0.35,
-      transform: [{ scale: 0.94 + selected * 0.12 }],
-    };
-  });
-  const tableIconStyle = useAnimatedStyle(() => {
-    const selected = 1 - Math.min(1, Math.abs(progress.value - 1));
-    return {
-      opacity: 0.65 + selected * 0.35,
-      transform: [{ scale: 0.94 + selected * 0.12 }],
-    };
-  });
 
   return (
     <View
       accessibilityRole="radiogroup"
       style={[styles.track, { backgroundColor: theme.surfaceSunken, borderColor: theme.border }]}>
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.indicator, { backgroundColor: theme.surface }, indicatorStyle]}
-      />
       <Pressable
         accessibilityRole="radio"
-        accessibilityLabel="Card view"
+        accessibilityLabel={cardsLabel}
         accessibilityState={{ checked: value === 'cards' }}
         onPress={() => onChange('cards')}
-        style={styles.option}>
-        <Animated.View style={cardIconStyle}>
-          <Icon name="listView" size={18} color={value === 'cards' ? theme.primary : theme.textMuted} />
-        </Animated.View>
+        style={[
+          styles.option,
+          value === 'cards' && styles.optionSelected,
+          value === 'cards' && { backgroundColor: theme.surface },
+        ]}>
+        <Icon name={cardsIcon} size={18} color={value === 'cards' ? theme.primary : theme.textMuted} />
       </Pressable>
       <Pressable
         accessibilityRole="radio"
-        accessibilityLabel="Table view"
+        accessibilityLabel={tableLabel}
         accessibilityState={{ checked: value === 'table' }}
         onPress={() => onChange('table')}
-        style={styles.option}>
-        <Animated.View style={tableIconStyle}>
-          <Icon name="tableView" size={18} color={value === 'table' ? theme.primary : theme.textMuted} />
-        </Animated.View>
+        style={[
+          styles.option,
+          value === 'table' && styles.optionSelected,
+          value === 'table' && { backgroundColor: theme.surface },
+        ]}>
+        <Icon name={tableIcon} size={18} color={value === 'table' ? theme.primary : theme.textMuted} />
       </Pressable>
     </View>
   );
@@ -81,12 +66,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  indicator: {
-    position: 'absolute',
-    top: 3,
-    bottom: 3,
-    left: 0,
-    width: 38,
+  optionSelected: {
     borderRadius: Radius.sm,
     shadowColor: '#0B1F33',
     shadowOpacity: 0.08,
@@ -100,6 +80,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: Radius.sm,
-    zIndex: 1,
   },
 });

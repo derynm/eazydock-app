@@ -20,6 +20,7 @@ export function Card({ padded = true, elevated, variant = 'surface', style, ...r
           backgroundColor: variant === 'alt' ? theme.surfaceAlt : theme.surface,
           borderColor: theme.border,
         },
+        Shadow.xs as object,
         padded && styles.padded,
         elevated && (Shadow.sm as object),
         style,
@@ -38,6 +39,7 @@ export function PressableCard({ padded = true, elevated, style, ...rest }: Press
       style={(state) => [
         styles.base,
         { backgroundColor: theme.surface, borderColor: theme.border },
+        Shadow.xs as object,
         padded && styles.padded,
         elevated && (Shadow.sm as object),
         'pressed' in state && state.pressed && { backgroundColor: theme.surfaceSunken },
@@ -51,8 +53,7 @@ export function PressableCard({ padded = true, elevated, style, ...rest }: Press
 const styles = StyleSheet.create({
   base: {
     borderRadius: Radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
+    borderWidth: 1,
   },
   padded: { padding: Spacing.lg },
 });

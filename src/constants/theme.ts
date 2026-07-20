@@ -52,6 +52,8 @@ export type Palette = {
   dangerSoft: string;
   info: string;
   infoSoft: string;
+  accent: string;
+  accentSoft: string;
   neutralSoft: string;
 
   scrim: string;
@@ -69,7 +71,7 @@ export type Palette = {
 
 export const Colors: { light: Palette; dark: Palette } = {
   light: {
-    background: '#F4F6F9',
+    background: '#FBFCFE',
     surface: '#FFFFFF',
     surfaceAlt: '#F8FAFC',
     surfaceSunken: '#EEF1F6',
@@ -79,7 +81,7 @@ export const Colors: { light: Palette; dark: Palette } = {
     textMuted: '#94A3B8',
     textInverse: '#FFFFFF',
 
-    border: '#E5E9F0',
+    border: '#EEF1F5',
     borderStrong: '#CBD5E1',
 
     primary: Brand[500],
@@ -95,6 +97,8 @@ export const Colors: { light: Palette; dark: Palette } = {
     dangerSoft: '#FDECEC',
     info: Brand[600],
     infoSoft: Brand[50],
+    accent: '#7C3AED',
+    accentSoft: '#F2EAFF',
     neutralSoft: '#EEF1F6',
 
     scrim: 'rgba(8, 15, 31, 0.45)',
@@ -135,6 +139,8 @@ export const Colors: { light: Palette; dark: Palette } = {
     dangerSoft: 'rgba(248,113,113,0.16)',
     info: Brand[300],
     infoSoft: 'rgba(32,138,239,0.16)',
+    accent: '#A78BFA',
+    accentSoft: 'rgba(167,139,250,0.16)',
     neutralSoft: '#1B232F',
 
     scrim: 'rgba(0, 0, 0, 0.6)',
@@ -194,6 +200,11 @@ export const Fonts = Platform.select({
 /** Elevation presets (cross-platform). */
 export const Shadow = {
   none: {},
+  xs: Platform.select({
+    ios: { shadowColor: '#0B1F33', shadowOpacity: 0.035, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
+    android: { elevation: 1 },
+    default: { boxShadow: '0 1px 3px rgba(11,31,51,0.035)' } as object,
+  })!,
   sm: Platform.select({
     ios: { shadowColor: '#0B1F33', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
     android: { elevation: 2 },

@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +10,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 export function CompanySwitcher() {
   const theme = useTheme();
+  const router = useRouter();
   const { companies, activeCompanyId, switchCompany } = useSession();
   const active = useActiveCompany();
   const [open, setOpen] = useState(false);
@@ -50,9 +52,11 @@ export function CompanySwitcher() {
                 return (
                   <Pressable
                     key={c.id}
-                    onPress={() => {
+                    onPress={async () => {
                       setOpen(false);
-                      if (!selected) void switchCompany(c.id);
+                      if (selected) return;
+                      await switchCompany(c.id);
+                      router.replace('/select-building');
                     }}
                     style={({ pressed }) => [
                       styles.option,

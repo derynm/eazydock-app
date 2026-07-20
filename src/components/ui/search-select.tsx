@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingHorizontal: Spacing.md,
     borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   scrim: { flex: 1, justifyContent: 'center', padding: Spacing.xl },
   sheetWrap: { flex: 1, width: '100%', maxWidth: 460, alignSelf: 'center', justifyContent: 'center' },

@@ -113,8 +113,6 @@ export default function ParkingSpacesScreen() {
   return (
     <Screen
       title="Parking Spaces"
-      subtitle={viewMode === 'list' && list.total ? `${list.total} total` : undefined}
-      subtitleLoading={viewMode === 'list' && (list.isLoading || list.isRefetching)}
       headerRight={
         can('locations.spaces', 'create') ? (
           isTablet ? (

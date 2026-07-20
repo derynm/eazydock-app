@@ -3,7 +3,6 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSession } from '@/auth/session';
-import { BrandMark } from '@/components/brand';
 import { CompanySwitcher } from '@/components/company-switcher';
 import { Icon, Text } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
@@ -49,35 +48,19 @@ export function AppSidebar({ collapsed = false, onNavigate, onToggleCollapse, sh
   return (
     <View style={[styles.root, { backgroundColor: theme.sidebar }]}>
       <SafeAreaView edges={['top', 'bottom', 'left']} style={styles.safe}>
-        {/* Brand */}
-        <View style={[styles.brand, collapsed && styles.brandCollapsed]}>
-          <BrandMark size={36} />
+        {/* Company context */}
+        <View style={[styles.companyHeader, collapsed && styles.companyHeaderCollapsed]}>
           {!collapsed ? (
-            <View style={styles.brandText}>
-              <Text variant="bodyStrong" tint={theme.sidebarText}>
-                Eazydock
-              </Text>
+            <View style={styles.companySwitcher}>
+              <CompanySwitcher />
             </View>
           ) : null}
-          {showCollapseToggle && !collapsed ? (
+          {showCollapseToggle ? (
             <Pressable hitSlop={8} onPress={onToggleCollapse} style={styles.collapseBtn}>
               <Icon name="sidebar" size={20} color={theme.sidebarMuted} />
             </Pressable>
           ) : null}
         </View>
-
-        {/* Building chip */}
-        {!collapsed ? (
-          <Pressable
-            onPress={() => { onNavigate?.(); router.navigate('/select-building' as never); }}
-            style={[styles.buildingChip, { backgroundColor: theme.sidebarAlt }]}>
-            <Icon name="buildings" size={15} color={theme.sidebarMuted} />
-            <Text variant="caption" tint={theme.sidebarMuted} style={styles.buildingLabel} numberOfLines={1}>
-              {selectedBuilding ? selectedBuilding.name : 'Select building'}
-            </Text>
-            <Icon name="chevronDown" size={13} color={theme.sidebarMuted} />
-          </Pressable>
-        ) : null}
 
         {/* Nav */}
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.nav}>
@@ -122,7 +105,15 @@ export function AppSidebar({ collapsed = false, onNavigate, onToggleCollapse, sh
         <View style={[styles.footer, { borderTopColor: theme.sidebarBorder }]}>
           {!collapsed ? (
             <>
-              <CompanySwitcher />
+              <Pressable
+                onPress={() => { onNavigate?.(); router.navigate('/select-building' as never); }}
+                style={[styles.buildingChip, { backgroundColor: theme.sidebarAlt }]}>
+                <Icon name="buildings" size={17} color={theme.sidebarMuted} />
+                <Text variant="caption" tint={theme.sidebarMuted} style={styles.buildingLabel} numberOfLines={1}>
+                  {selectedBuilding ? selectedBuilding.name : 'Select building'}
+                </Text>
+                <Icon name="chevronDown" size={13} color={theme.sidebarMuted} />
+              </Pressable>
               <View style={styles.userRow}>
                 <Pressable
                   onPress={openProfile}
@@ -165,23 +156,21 @@ export function AppSidebar({ collapsed = false, onNavigate, onToggleCollapse, sh
 const styles = StyleSheet.create({
   root: { flex: 1 },
   safe: { flex: 1 },
-  brand: {
+  companyHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
   },
-  brandCollapsed: { justifyContent: 'center', paddingHorizontal: 0 },
-  brandText: { flex: 1, gap: 1 },
+  companyHeaderCollapsed: { justifyContent: 'center', paddingHorizontal: 0 },
+  companySwitcher: { flex: 1, minWidth: 0 },
   collapseBtn: { padding: 4 },
   buildingChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: Radius.pill,

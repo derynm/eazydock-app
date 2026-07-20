@@ -8,3 +8,20 @@ index 41b43599a9af6ef1c170047d39db1f3baa6ca682..85c92d94ae8f418d9316b5500bacd43c
  
  buildscript {
    repositories {
+diff --git a/android/CMakeLists.txt b/android/CMakeLists.txt
+index 98fb4b41f8f72d7cc0ecbf4f96eb0301469a7d68..40f1645f3ae5f5facce66dfb43248451342bd909 100644
+--- a/android/CMakeLists.txt
++++ b/android/CMakeLists.txt
+@@ -87,6 +87,12 @@ set_target_properties(
+              CXX_EXTENSIONS OFF
+              POSITION_INDEPENDENT_CODE ON)
+ 
++# Android 15+ devices may use 16 KB memory pages. The React Native JSI bridge
++# is compiled locally, so align its ELF load segments to the largest supported
++# page size rather than relying on the prebuilt ONNX Runtime library alone.
++target_link_options(
++  onnxruntimejsi PRIVATE "-Wl,-z,max-page-size=16384")
++
+ find_library(log-lib log)
+ 
+ target_link_libraries(

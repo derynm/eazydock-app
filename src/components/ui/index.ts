@@ -4,6 +4,7 @@ export { Badge, type Tone } from './badge';
 export { Banner } from './banner';
 export { Button } from './button';
 export { Card, PressableCard } from './card';
+export { PickerSheetModal } from './picker-sheet-modal';
 export { DateTimeField } from './date-time-field';
 export { Divider } from './divider';
 export { FilterSheet } from './filter-sheet';

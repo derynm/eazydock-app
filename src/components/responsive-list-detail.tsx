@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { EmptyState, Icon, SkeletonRows, Text } from '@/components/ui';
-import { Layout, Spacing } from '@/constants/theme';
+import { Layout, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useResponsive } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -26,6 +26,14 @@ type Props<T> = {
   listHeader?: ReactNode;
   /** Left inset for row separators. Defaults to icon-offset (56). Pass 0 for table layouts. */
   separatorInset?: number;
+  /** Disable row dividers for card-style phone lists. */
+  showSeparators?: boolean;
+  /** Extra room below the last row, for example when a screen has a floating action button. */
+  contentBottomPadding?: number;
+  /** Present phone rows as the same light bordered cards used by the Activity screen. */
+  phoneCards?: boolean;
+  /** Space between the phone screen header and list controls. */
+  phoneHeaderTopPadding?: number;
 };
 
 export function ResponsiveListDetail<T>({
@@ -45,6 +53,10 @@ export function ResponsiveListDetail<T>({
   emptyDescription,
   listHeader,
   separatorInset = Spacing.md + 44,
+  showSeparators = true,
+  contentBottomPadding = Spacing.xxl,
+  phoneCards = true,
+  phoneHeaderTopPadding = Spacing.md,
 }: Props<T>) {
   const theme = useTheme();
   const { isTablet } = useResponsive();
@@ -63,12 +75,34 @@ export function ResponsiveListDetail<T>({
     <FlatList
       data={items}
       keyExtractor={(item) => String(getId(item))}
-      renderItem={({ item }) =>
-        renderRow(item, { selected: isTablet && getId(item) === selectedId, onPress: () => handlePress(getId(item)) }) as React.ReactElement
-      }
-      contentContainerStyle={[styles.listContent, items.length === 0 && styles.listEmpty]}
-      ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.border, marginLeft: separatorInset }]} />}
-      ListHeaderComponent={listHeader ? <View style={styles.header}>{listHeader}</View> : null}
+      renderItem={({ item }) => {
+        const row = renderRow(item, {
+          selected: isTablet && getId(item) === selectedId,
+          onPress: () => handlePress(getId(item)),
+        }) as React.ReactElement;
+
+        return !isTablet && phoneCards ? (
+          <View
+            style={[
+              styles.phoneCard,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+              Shadow.xs as object,
+            ]}>
+            {row}
+          </View>
+        ) : row;
+      }}
+      contentContainerStyle={[
+        styles.listContent,
+        { paddingBottom: contentBottomPadding },
+        items.length === 0 && styles.listEmpty,
+      ]}
+      ItemSeparatorComponent={showSeparators && (isTablet || !phoneCards)
+        ? () => <View style={[styles.sep, { backgroundColor: theme.border, marginLeft: separatorInset }]} />
+        : undefined}
+      ListHeaderComponent={listHeader ? (
+        <View style={[styles.header, !isTablet && { paddingTop: phoneHeaderTopPadding }]}>{listHeader}</View>
+      ) : null}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       onEndReached={onEndReached}
       onEndReachedThreshold={0.4}
@@ -113,9 +147,15 @@ export function ResponsiveListDetail<T>({
 }
 
 const styles = StyleSheet.create({
-  listContent: { paddingHorizontal: Spacing.sm, paddingBottom: Spacing.xxl },
+  listContent: { paddingHorizontal: Spacing.sm },
   listEmpty: { flexGrow: 1 },
   header: { paddingHorizontal: Spacing.sm, paddingBottom: Spacing.sm },
+  phoneCard: {
+    marginHorizontal: Spacing.sm,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+  },
   sep: { height: StyleSheet.hairlineWidth },
   footer: { paddingVertical: Spacing.lg },
   split: { flex: 1, flexDirection: 'row' },

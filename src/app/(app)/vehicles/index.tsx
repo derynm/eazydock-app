@@ -10,6 +10,7 @@ import { Radius } from '@/constants/theme';
 import { VehicleDetail } from '@/features/vehicles/vehicle-detail';
 import { VehicleForm } from '@/features/vehicles/vehicle-form';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useListFilterCounts } from '@/hooks/use-list-filter-counts';
 import { usePaginatedList } from '@/hooks/use-paginated-list';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useResponsive } from '@/hooks/use-responsive';
@@ -35,12 +36,16 @@ export default function VehiclesScreen() {
   const debounced = useDebouncedValue(search);
 
   const list = usePaginatedList(['vehicles'], listVehicles, { search: debounced, status: status || undefined });
+  const counts = useListFilterCounts({
+    baseKey: ['vehicles'],
+    fetcher: listVehicles,
+    params: { search: debounced },
+    values: FILTERS.map((filter) => filter.value),
+  });
 
   return (
     <Screen
       title="Vehicles"
-      subtitle={list.total ? `${list.total} total` : undefined}
-      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('people_vehicles.vehicles', 'create') ? (
           isTablet ? (
@@ -67,7 +72,12 @@ export default function VehiclesScreen() {
         listHeader={
           <View style={{ gap: 12 }}>
             <SearchBar value={search} onChangeText={setSearch} placeholder="Search plate, make, model…" />
-            <Segmented scrollable options={FILTERS as never} value={status} onChange={setStatus} />
+            <Segmented
+              scrollable
+              options={FILTERS.map((filter) => ({ ...filter, count: counts[filter.value] })) as never}
+              value={status}
+              onChange={setStatus}
+            />
           </View>
         }
         renderRow={(v, { selected, onPress }) => {

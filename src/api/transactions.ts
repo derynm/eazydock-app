@@ -12,6 +12,7 @@ export async function listTransactions(params: ListParams = {}): Promise<Paginat
         (!params.building_id || t.building_id === Number(params.building_id)) &&
         (!params.status || t.status === params.status) &&
         (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
+        (!params.driver_type || t.driver_type === params.driver_type) &&
         (!q ||
           t.transaction_no.toLowerCase().includes(q) ||
           (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||

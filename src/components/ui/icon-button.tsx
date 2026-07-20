@@ -23,7 +23,11 @@ export function IconButton({ name, size = 22, color, surface, style, ...rest }: 
       style={(state) => [
         styles.base,
         { width: box, height: box },
-        surface && { backgroundColor: theme.surfaceSunken },
+        surface && {
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+          borderWidth: 1,
+        },
         'pressed' in state && state.pressed && { opacity: 0.6 },
         typeof style === 'function' ? style(state) : style,
       ]}

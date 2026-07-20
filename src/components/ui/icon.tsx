@@ -34,6 +34,7 @@ const ICONS = {
   chevronDown: { ios: 'chevron.down', other: 'expand_more' },
   arrowLeft: { ios: 'arrow.left', other: 'arrow_back' },
   arrowRight: { ios: 'arrow.right', other: 'arrow_forward' },
+  arrowDownRight: { ios: 'arrow.down.right', other: 'south_east' },
 
   check: { ios: 'checkmark', other: 'check' },
   checkCircle: { ios: 'checkmark.circle.fill', other: 'check_circle' },
@@ -59,6 +60,8 @@ const ICONS = {
   image: { ios: 'photo.fill', other: 'image' },
   carIn: { ios: 'arrow.down.right.circle.fill', other: 'login' },
   carOut: { ios: 'arrow.up.right.circle.fill', other: 'logout' },
+  checkIns: { ios: 'rectangle.portrait.and.arrow.right', other: 'login' },
+  bays: { ios: 'door.garage.closed', other: 'garage' },
 
   eye: { ios: 'eye.fill', other: 'visibility' },
   eyeOff: { ios: 'eye.slash.fill', other: 'visibility_off' },

@@ -189,23 +189,75 @@ export type DashboardMetrics = {
   active_spaces: number;
   occupied_spaces: number;
   available_spaces: number;
+  maintenance_spaces: number;
+  blocked_spaces: number;
   occupancy_percentage: number;
   currently_inside: number;
   visitor_inside: number;
   delivery_inside: number;
   today_transactions: number;
   today_checkouts: number;
-  overstay_alerts: number;
-  open_overstay_incidents: number;
-  plate_review_required: number;
   flexible_allocation_quota: number;
   flexible_allocation_used: number;
   flexible_allocation_usage_percentage: number;
+  overstay_alerts: number;
+  overstay_threshold_minutes: number;
+  open_overstay_incidents: number;
+};
+
+export type DashboardOccupancy = {
+  period: string;
+  date: string;
+  total_bays: number;
+  occupied_bays: number;
+  available_bays: number;
+  percentage: number;
+};
+
+export type DashboardActiveVehicle = {
+  id: number;
+  transaction_no: string;
+  status: TransactionStatus;
+  driver_type: DriverType;
+  parking_area_id: number;
+  parking_space_id: number | null;
+  vehicle_id: number | null;
+  car_in_at: string;
+  car_out_at: string | null;
+  duration_minutes: number | null;
+  parked_duration_minutes: number;
+  parked_duration_label: string;
+  entry_plate_number_raw: string | null;
+  parking_area: { id: number; name: string } | null;
+  parking_space: { id: number; space_code: string } | null;
+  vehicle: { id: number; plate_number: string; plate_state: string | null } | null;
+};
+
+export type DashboardBreakdown = {
+  type: string;
+  label: string;
+  value: number;
+};
+
+export type DashboardDailyMovement = {
+  date: string;
+  label: string;
+  car_in: number;
+  car_out: number;
 };
 
 export type DashboardResponse = {
   metrics: DashboardMetrics;
-  active_vehicles: Transaction[];
+  occupancy: DashboardOccupancy;
+  active_vehicles: DashboardActiveVehicle[];
+  visitor_type_trend: DashboardBreakdown[];
+  movement_summary: {
+    last_24_hours: number;
+    last_7_days: number;
+    daily_average: number;
+  };
+  daily_movement_trend: DashboardDailyMovement[];
+  vehicle_breakdown: DashboardBreakdown[];
 };
 
 /* ---- Lookups ---- */

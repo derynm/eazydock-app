@@ -134,6 +134,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (companyId: number) => {
       setActiveCompanyId(companyId);
       await storage.set(StorageKeys.companyId, String(companyId));
+      // A building belongs to the previous company scope. Clear it before
+      // any queries are refreshed so it cannot leak into the new context.
+      await clearBuilding();
       // Re-fetch permissions for the new scope, then reload every list.
       try {
         await applyPayload(await fetchUser());
@@ -142,7 +145,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
       await queryClient.invalidateQueries();
     },
-    [applyPayload, queryClient],
+    [applyPayload, clearBuilding, queryClient],
   );
 
   const value = useMemo<SessionValue>(

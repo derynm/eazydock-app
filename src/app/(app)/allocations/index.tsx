@@ -55,8 +55,6 @@ export default function AllocationsScreen() {
   return (
     <Screen
       title="Allocations"
-      subtitle={list.total ? `${list.total} total` : undefined}
-      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         <View style={styles.headerRight}>
           <View>

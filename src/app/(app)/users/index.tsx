@@ -6,7 +6,7 @@ import { listUsers } from '@/api/users';
 import { Screen } from '@/components/screen';
 import { ResponsiveListDetail } from '@/components/responsive-list-detail';
 import { Badge, Button, Icon, IconButton, ListRow, SearchBar } from '@/components/ui';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
 import { UserDetail } from '@/features/users/user-detail';
 import { UserForm } from '@/features/users/user-form';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
@@ -30,8 +30,6 @@ export default function UsersScreen() {
   return (
     <Screen
       title="Users"
-      subtitle={list.total ? `${list.total} total` : undefined}
-      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('administration.users', 'create') ? (
           isTablet ? (

@@ -44,3 +44,6 @@ example
 
 # Android release signing (generated locally, never commit)
 /credentials/
+screenshots
+
+.pnpm-store/

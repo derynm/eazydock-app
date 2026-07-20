@@ -8,6 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { AppSidebar } from '@/components/app-sidebar';
+import { BottomNavigation } from '@/components/bottom-navigation';
 import { Layout } from '@/constants/theme';
 import { useSession } from '@/auth/session';
 import { useResponsive } from '@/hooks/use-responsive';
@@ -96,6 +97,7 @@ export default function AppLayout() {
     <ShellContext.Provider value={shell}>
       <View style={[styles.fill, { backgroundColor: theme.background }]}>
         {contentStack}
+        <BottomNavigation />
         <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { backgroundColor: theme.scrim }, scrimStyle]}>
           <Pressable style={styles.fill} onPress={closeDrawer} accessibilityLabel="Close menu" />
         </Animated.View>

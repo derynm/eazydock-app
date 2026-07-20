@@ -9,6 +9,7 @@ import { Avatar, Badge, Button, IconButton, ListRow, SearchBar, Segmented } from
 import { DriverDetail } from '@/features/drivers/driver-detail';
 import { DriverForm } from '@/features/drivers/driver-form';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useListFilterCounts } from '@/hooks/use-list-filter-counts';
 import { usePaginatedList } from '@/hooks/use-paginated-list';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useResponsive } from '@/hooks/use-responsive';
@@ -31,12 +32,16 @@ export default function DriversScreen() {
   const debounced = useDebouncedValue(search);
 
   const list = usePaginatedList(['drivers'], listDrivers, { search: debounced, status: status || undefined });
+  const counts = useListFilterCounts({
+    baseKey: ['drivers'],
+    fetcher: listDrivers,
+    params: { search: debounced },
+    values: FILTERS.map((filter) => filter.value),
+  });
 
   return (
     <Screen
       title="Drivers"
-      subtitle={list.total ? `${list.total} total` : undefined}
-      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         can('people_vehicles.drivers', 'create') ? (
           isTablet ? (
@@ -63,7 +68,12 @@ export default function DriversScreen() {
         listHeader={
           <View style={{ gap: 12 }}>
             <SearchBar value={search} onChangeText={setSearch} placeholder="Search name, company, phone…" />
-            <Segmented scrollable options={FILTERS as never} value={status} onChange={setStatus} />
+            <Segmented
+              scrollable
+              options={FILTERS.map((filter) => ({ ...filter, count: counts[filter.value] })) as never}
+              value={status}
+              onChange={setStatus}
+            />
           </View>
         }
         renderRow={(d, { selected, onPress }) => {

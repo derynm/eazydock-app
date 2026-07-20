@@ -9,7 +9,6 @@ import type {
   Building,
   BuildingResource,
   Company,
-  CompanyUser,
   DashboardResponse,
   Driver,
   Incident,
@@ -363,31 +362,82 @@ export const incidents: Incident[] = Array.from({ length: 10 }).map((_, i) => {
 
 /* ---- Dashboard ---- */
 export function dashboard(): DashboardResponse {
-  const occupied = transactions.filter((t) => t.status === 'active' || t.status === 'overstay').length;
-  const total = parkingSpaces.length;
+  const activeVehicles = [transactions[0], transactions[2]].map((transaction) => {
+    const parkedMinutes = Math.max(
+      0,
+      Math.floor((now - new Date(transaction.car_in_at ?? now).getTime()) / 60_000),
+    );
+    const hours = Math.floor(parkedMinutes / 60);
+    const minutes = parkedMinutes % 60;
+    const parkedLabel = hours > 0 ? `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}` : `${minutes}m`;
+    const vehicle = vehicles.find((item) => item.id === transaction.vehicle_id);
+
+    return {
+      id: transaction.id,
+      transaction_no: transaction.transaction_no,
+      status: 'active' as const,
+      driver_type: transaction.driver_type,
+      parking_area_id: transaction.parking_area_id,
+      parking_space_id: transaction.parking_space_id,
+      vehicle_id: transaction.vehicle_id,
+      car_in_at: transaction.car_in_at ?? new Date(now).toISOString(),
+      car_out_at: null,
+      duration_minutes: null,
+      parked_duration_minutes: parkedMinutes,
+      parked_duration_label: parkedLabel,
+      entry_plate_number_raw: transaction.entry_plate_number_raw,
+      parking_area: transaction.parking_area ?? null,
+      parking_space: transaction.parking_space ?? null,
+      vehicle: vehicle
+        ? { id: vehicle.id, plate_number: vehicle.plate_number, plate_state: vehicle.plate_state }
+        : null,
+    };
+  });
+
   return {
     metrics: {
-      buildings: buildings.length,
-      tenants: tenants.length,
-      areas: parkingAreas.length,
-      total_spaces: total,
-      active_spaces: total,
-      occupied_spaces: occupied,
-      available_spaces: total - occupied,
-      occupancy_percentage: Math.round((occupied / total) * 100),
-      currently_inside: occupied,
-      visitor_inside: transactions.filter((t) => t.status === 'active' && t.driver_type === 'visitor').length,
-      delivery_inside: transactions.filter((t) => t.status === 'active' && t.driver_type === 'delivery').length,
-      today_transactions: 28,
-      today_checkouts: 16,
-      overstay_alerts: transactions.filter((t) => t.status === 'overstay').length,
-      open_overstay_incidents: 2,
-      plate_review_required: 3,
-      flexible_allocation_quota: 40,
-      flexible_allocation_used: 27,
-      flexible_allocation_usage_percentage: 68,
+      buildings: 1,
+      tenants: 4,
+      areas: 1,
+      total_spaces: 15,
+      active_spaces: 15,
+      occupied_spaces: 2,
+      available_spaces: 13,
+      maintenance_spaces: 0,
+      blocked_spaces: 0,
+      occupancy_percentage: 13.3,
+      currently_inside: 2,
+      visitor_inside: 1,
+      delivery_inside: 1,
+      today_transactions: 5,
+      today_checkouts: 3,
+      flexible_allocation_quota: 10,
+      flexible_allocation_used: 2,
+      flexible_allocation_usage_percentage: 20,
+      overstay_alerts: 0,
+      overstay_threshold_minutes: 240,
+      open_overstay_incidents: 0,
     },
-    active_vehicles: transactions.filter((t) => t.status === 'active' || t.status === 'overstay'),
+    occupancy: {
+      period: 'today',
+      date: new Date(now).toISOString().slice(0, 10),
+      total_bays: 15,
+      occupied_bays: 2,
+      available_bays: 13,
+      percentage: 13.3,
+    },
+    active_vehicles: activeVehicles,
+    visitor_type_trend: [],
+    movement_summary: {
+      last_24_hours: 5,
+      last_7_days: 24,
+      daily_average: 3.4,
+    },
+    daily_movement_trend: [
+      { date: '2026-07-13', label: 'Mon', car_in: 8, car_out: 6 },
+      { date: '2026-07-14', label: 'Tue', car_in: 12, car_out: 9 },
+    ],
+    vehicle_breakdown: [],
   };
 }
 

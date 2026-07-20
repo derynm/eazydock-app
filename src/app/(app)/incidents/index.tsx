@@ -53,8 +53,6 @@ export default function IncidentsScreen() {
   return (
     <Screen
       title="Incidents"
-      subtitle={list.total ? `${list.total} total` : undefined}
-      subtitleLoading={list.isLoading || list.isRefetching}
       headerRight={
         <View style={styles.headerRight}>
           <View>
