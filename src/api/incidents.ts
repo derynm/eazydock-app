@@ -17,10 +17,14 @@ export type IncidentUpdateInput = {
 
 export async function listIncidents(params: ListParams = {}): Promise<Paginator<Incident>> {
   if (USE_FIXTURES) {
+    const dateFrom = params.date_from ? String(params.date_from) : null;
+    const dateTo = params.date_to ? String(params.date_to) : null;
     const rows = fx.incidents.filter(
       (i) =>
         (!params.status || i.status === params.status) &&
-        (!params.incident_type || i.incident_type === params.incident_type),
+        (!params.incident_type || i.incident_type === params.incident_type) &&
+        (!dateFrom || i.created_at.slice(0, 10) >= dateFrom) &&
+        (!dateTo || i.created_at.slice(0, 10) <= dateTo),
     );
     return fx.delay(fx.paginate(rows, Number(params.page) || 1));
   }

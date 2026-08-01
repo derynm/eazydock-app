@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { KeyboardAvoidingView, Platform, StyleSheet, View, type ScrollView } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, StyleSheet, View, type ScrollView } from 'react-native';
 
 import { toApiError } from '@/api/client';
 import { lookupParkingAreas, lookupParkingSpaces, lookupTenants, searchDrivers } from '@/api/lookups';
@@ -33,8 +33,7 @@ const EMPTY: CheckInForm = {
   vehicle_colour: '',
   driver_type: 'delivery',
   entry_method: 'manual_entry',
-  contact_name: '',
-  contact_phone: '',
+  driver_phone: '',
   comments: '',
 };
 
@@ -58,6 +57,8 @@ export default function CheckInScreen() {
   const [scanning, setScanning] = useState(false);
   const [lookup, setLookup] = useState<LookupState>({ status: 'idle' });
   const [revealed, setRevealed] = useState(false);
+  const [hasOpenedForm, setHasOpenedForm] = useState(false);
+  const [vehicleMatchesQuery, setVehicleMatchesQuery] = useState<string | null>(null);
   const [driverText, setDriverText] = useState('');
   const [driverCompany, setDriverCompany] = useState('');
   const [vehicleType, setVehicleType] = useState<VehicleType | undefined>();
@@ -71,6 +72,9 @@ export default function CheckInScreen() {
   const buildingId = selectedBuilding?.id ?? 0;
   const areaId = watch('parking_area_id');
   const driverId = watch('driver_id');
+  const plateNumber = watch('plate_number');
+  const normalizedPlate = plateNumber.trim().toUpperCase();
+  const hasVehicleMatches = vehicleMatchesQuery === normalizedPlate;
 
   // Keep the hidden form field in sync if the user switches buildings.
   useEffect(() => {
@@ -90,15 +94,23 @@ export default function CheckInScreen() {
   // Plate lookup → prefill from the vehicle's last visit, or flag a new vehicle.
   const runLookup = async () => {
     const plate = getValues('plate_number').trim();
-    if (plate.length < 2) return;
+    if (!plate) return;
+    Keyboard.dismiss();
+    setRevealed(false);
     setLookup({ status: 'loading' });
     try {
       const p = await lookupPlate(plate);
-      setRevealed(true);
       if (!p.found) {
+        setHasOpenedForm(true);
+        setRevealed(true);
         setLookup({ status: 'new' });
         return;
       }
+      // Keep vehicles that are already inside on the plate step. The warning
+      // and disabled Proceed button make the conflict visible before the
+      // operator enters the rest of the check-in details.
+      setHasOpenedForm(!p.activeTransaction);
+      setRevealed(!p.activeTransaction);
       setValue('vehicle_id', p.vehicleId ?? null);
       setValue('vehicle_make', p.make ?? '');
       setValue('vehicle_model', p.model ?? '');
@@ -123,7 +135,7 @@ export default function CheckInScreen() {
     }
   };
 
-  const clearPrefill = () => {
+  const clearPrefill = (keepFormOpen = false) => {
     setValue('vehicle_id', null);
     setValue('vehicle_make', '');
     setValue('vehicle_model', '');
@@ -133,11 +145,21 @@ export default function CheckInScreen() {
     setVehicleType(undefined);
     setDriverText('');
     setDriverCompany('');
-    setLookup({ status: 'idle' });
+    setRevealed(keepFormOpen);
+    setLookup(keepFormOpen ? { status: 'new' } : { status: 'idle' });
   };
 
-  // Picking a vehicle suggestion sets the plate and runs the same prefill.
+  const resetToPlateStep = () => {
+    clearPrefill();
+    setHasOpenedForm(false);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
+    });
+  };
+
+  // Picking a suggestion fills the field; Proceed performs the authoritative lookup.
   const onPickVehicle = async (item: AutocompleteItem) => {
+    clearPrefill();
     setValue('plate_number', item.label);
     await runLookup();
   };
@@ -156,6 +178,7 @@ export default function CheckInScreen() {
         tenant_id: values.tenant_id ?? null,
         driver_id: values.driver_id ?? null,
         driver_name: linking ? driverText.trim() : null,
+        driver_phone: values.driver_phone || null,
         driver_company_name: hasDriver ? driverCompany || null : null,
         vehicle_id: values.vehicle_id ?? null,
         plate_number: values.plate_number,
@@ -165,8 +188,6 @@ export default function CheckInScreen() {
         vehicle_type: vehicleType ?? null,
         driver_type: values.driver_type,
         entry_method: values.entry_method,
-        contact_name: values.contact_name || null,
-        contact_phone: values.contact_phone || null,
         comments: values.comments || null,
       };
       return checkIn(input);
@@ -199,9 +220,13 @@ export default function CheckInScreen() {
     <Screen title="New check-in" onBack={() => router.back()}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
         <FormScrollView
+          key={hasOpenedForm ? 'check-in-form' : 'check-in-plate-step'}
           ref={scrollRef}
           style={styles.flex}
-          contentContainerStyle={[styles.content, !revealed && styles.contentCentered]}
+          contentContainerStyle={[styles.content, !hasOpenedForm && styles.contentCentered]}
+          onContentSizeChange={() => {
+            if (!hasOpenedForm) scrollRef.current?.scrollTo({ y: 0, animated: false });
+          }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           {topError ? <Banner title="Couldn’t check in" message={topError} tone="danger" /> : null}
@@ -223,12 +248,26 @@ export default function CheckInScreen() {
                   returnKeyType="search"
                   queryKey="checkin-vehicles"
                   minChars={1}
+                  noMatchesText="New vehicle"
                   value={field.value}
                   onChangeText={(v) => {
                     field.onChange(v);
-                    if (lookup.status !== 'idle' && lookup.status !== 'loading') setLookup({ status: 'idle' });
+                    if (!v.trim()) {
+                      resetToPlateStep();
+                    } else if (hasOpenedForm) {
+                      clearPrefill(true);
+                    } else if (lookup.status !== 'idle') {
+                      clearPrefill();
+                    }
                   }}
-                  search={async (q) => (await searchVehicles(q)).map((v) => ({ id: v.id, label: v.plate_number }))}
+                  search={async (q) => {
+                    const vehicles = await searchVehicles(q);
+                    const normalizedQuery = q.trim().toUpperCase();
+                    if (getValues('plate_number').trim().toUpperCase() === normalizedQuery) {
+                      setVehicleMatchesQuery(vehicles.length > 0 ? normalizedQuery : null);
+                    }
+                    return vehicles.map((v) => ({ id: v.id, label: v.plate_number }));
+                  }}
                   onSelect={onPickVehicle}
                   onSubmitEditing={runLookup}
                   error={fieldState.error?.message}
@@ -240,30 +279,22 @@ export default function CheckInScreen() {
               )}
             />
 
-            <Button
-              title={lookup.status === 'loading' ? 'Looking up…' : revealed ? 'Look up again' : 'Look up plate'}
-              icon="search"
-              variant={revealed ? 'secondary' : 'primary'}
-              size={revealed ? 'sm' : 'lg'}
-              loading={lookup.status === 'loading'}
-              onPress={runLookup}
-              fullWidth={!revealed}
-            />
-
             {lookup.status === 'found' ? (
               <>
-                <Banner
-                  tone="success"
-                  icon="checkCircle"
-                  title="Returning vehicle"
-                  message={[
-                    lookup.driverName ? `${lookup.driverName}` : null,
-                    lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
-                    lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                />
+                {!lookup.activeTransaction ? (
+                  <Banner
+                    tone="success"
+                    icon="checkCircle"
+                    title="Returning vehicle"
+                    message={[
+                      lookup.driverName ? `${lookup.driverName}` : null,
+                      lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
+                      lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                  />
+                ) : null}
                 {lookup.activeTransaction ? (
                   <Banner
                     tone="warning"
@@ -272,8 +303,20 @@ export default function CheckInScreen() {
                   />
                 ) : null}
               </>
-            ) : lookup.status === 'new' ? (
+            ) : lookup.status === 'new' && revealed && !hasVehicleMatches ? (
               <Banner tone="info" icon="info" title="New vehicle" message="No previous visits for this plate — enter the details below." />
+            ) : null}
+
+            {!revealed ? (
+              <Button
+                title="Proceed"
+                iconRight="arrowRight"
+                size="lg"
+                loading={lookup.status === 'loading'}
+                disabled={!plateNumber.trim() || (lookup.status === 'found' && !!lookup.activeTransaction)}
+                onPress={runLookup}
+                fullWidth
+              />
             ) : null}
             </Section>
           </Card>
@@ -328,8 +371,8 @@ export default function CheckInScreen() {
                 setValue('driver_id', item.id);
               }}
             />
-            <Controller control={control} name="contact_phone" render={({ field, fieldState }) => (
-              <TextField label="Contact phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
+            <Controller control={control} name="driver_phone" render={({ field, fieldState }) => (
+              <TextField label="Driver phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
             )} />
 
             <AutocompleteField
@@ -367,9 +410,9 @@ export default function CheckInScreen() {
         visible={scanning}
         onClose={() => setScanning(false)}
         onResult={(r) => {
+          clearPrefill();
           setValue('plate_number', r.plate);
           setScanning(false);
-          runLookup();
         }}
       />
     </Screen>

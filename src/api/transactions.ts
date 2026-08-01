@@ -1,22 +1,49 @@
 import { File, Paths } from 'expo-file-system';
 
+import { instantFromSydneyDateTimeValue } from '@/lib/sydney-time';
+
 import { api, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { DriverType, EntryMethod, Incident, ListParams, Paginator, Transaction } from './types';
+import type { DriverType, DriverVisitSummary, EntryMethod, Incident, ListParams, Paginator, Transaction } from './types';
+
+function dateBoundary(value: string | number | undefined, endOfDay: boolean): number | null {
+  if (!value) return null;
+  const raw = String(value);
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? `${raw}T${endOfDay ? '23:59:59.999' : '00:00:00'}`
+    : raw;
+  return instantFromSydneyDateTimeValue(normalized)?.getTime() ?? null;
+}
+
+function transactionEntryTime(transaction: Transaction): number {
+  return new Date(transaction.car_in_at ?? transaction.transaction_date).getTime();
+}
+
+function formatParkedDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours > 0 ? `${hours}h${remainder > 0 ? ` ${remainder}m` : ''}` : `${remainder}m`;
+}
 
 export async function listTransactions(params: ListParams = {}): Promise<Paginator<Transaction>> {
   if (USE_FIXTURES) {
     const q = (params.search ?? '').toLowerCase();
+    const dateFrom = dateBoundary(params.date_from, false);
+    const dateTo = dateBoundary(params.date_to, true);
     const rows = fx.transactions.filter(
-      (t) =>
-        (!params.building_id || t.building_id === Number(params.building_id)) &&
-        (!params.status || t.status === params.status) &&
-        (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
-        (!params.driver_type || t.driver_type === params.driver_type) &&
-        (!q ||
-          t.transaction_no.toLowerCase().includes(q) ||
-          (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
-          (t.driver?.full_name ?? '').toLowerCase().includes(q)),
+      (t) => {
+        const entryTime = transactionEntryTime(t);
+        return (!params.building_id || t.building_id === Number(params.building_id)) &&
+          (!params.status || t.status === params.status) &&
+          (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
+          (!params.driver_type || t.driver_type === params.driver_type) &&
+          (dateFrom === null || entryTime >= dateFrom) &&
+          (dateTo === null || entryTime <= dateTo) &&
+          (!q ||
+            t.transaction_no.toLowerCase().includes(q) ||
+            (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
+            (t.driver?.full_name ?? '').toLowerCase().includes(q));
+      },
     );
     return fx.delay(fx.paginate(rows, Number(params.page) || 1));
   }
@@ -31,16 +58,24 @@ export async function listTransactions(params: ListParams = {}): Promise<Paginat
 export async function listActiveVehicles(params: ListParams = {}): Promise<Paginator<Transaction>> {
   if (USE_FIXTURES) {
     const q = (params.search ?? '').toLowerCase();
+    const dateFrom = dateBoundary(params.date_from, false);
+    const dateTo = dateBoundary(params.date_to, true);
     const rows = fx.transactions.filter(
-      (t) =>
-        (!params.building_id || t.building_id === Number(params.building_id)) &&
-        (t.status === 'active' || t.status === 'overstay') &&
-        (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
-        (!params.driver_type || t.driver_type === params.driver_type) &&
-        (!q ||
-          t.transaction_no.toLowerCase().includes(q) ||
-          (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
-          (t.driver?.full_name ?? '').toLowerCase().includes(q)),
+      (t) => {
+        const entryTime = transactionEntryTime(t);
+        return (
+          (!params.building_id || t.building_id === Number(params.building_id)) &&
+          (t.status === 'active' || t.status === 'overstay') &&
+          (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
+          (!params.driver_type || t.driver_type === params.driver_type) &&
+          (dateFrom === null || entryTime >= dateFrom) &&
+          (dateTo === null || entryTime <= dateTo) &&
+          (!q ||
+            t.transaction_no.toLowerCase().includes(q) ||
+            (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
+            (t.driver?.full_name ?? '').toLowerCase().includes(q))
+        );
+      },
     );
     return fx.delay(fx.paginate(rows, Number(params.page) || 1));
   }
@@ -105,7 +140,36 @@ export async function getTransaction(id: number): Promise<Transaction> {
   if (USE_FIXTURES) {
     const found = fx.transactions.find((t) => t.id === id);
     if (!found) throw toApiError({ response: { status: 404, data: { message: 'Transaction not found' } } });
-    return fx.delay(found);
+    let driverVisitSummary: DriverVisitSummary | null = null;
+    if (found.driver_id) {
+      const visits = fx.transactions.filter(
+        (transaction) =>
+          transaction.driver_id === found.driver_id &&
+          (transaction.status === 'active' || transaction.status === 'completed'),
+      );
+      const lastVisit = visits
+        .filter((transaction) => transaction.id !== found.id && transaction.status === 'completed')
+        .sort((a, b) => new Date(b.car_in_at ?? 0).getTime() - new Date(a.car_in_at ?? 0).getTime())[0];
+
+      driverVisitSummary = {
+        total_visits: visits.length,
+        total_duration_minutes: visits.reduce(
+          (total, transaction) => total + (transaction.status === 'completed' ? transaction.duration_minutes ?? 0 : 0),
+          0,
+        ),
+        last_visit: lastVisit
+          ? {
+              id: lastVisit.id,
+              transaction_no: lastVisit.transaction_no,
+              car_in_at: lastVisit.car_in_at,
+              car_out_at: lastVisit.car_out_at,
+              duration_minutes: lastVisit.duration_minutes,
+              tenant: lastVisit.tenant ?? null,
+            }
+          : null,
+      };
+    }
+    return fx.delay({ ...found, driver_visit_summary: driverVisitSummary });
   }
   try {
     const { data } = await api.get<{ data: Transaction }>(`/admin/transactions/${id}`);
@@ -123,6 +187,7 @@ export type CheckInInput = {
   driver_id?: number | null;
   // New (unlinked) driver — backend creates + links it during check-in.
   driver_name?: string | null;
+  driver_phone?: string | null;
   driver_company_name?: string | null;
   vehicle_id?: number | null;
   plate_number: string;
@@ -132,8 +197,6 @@ export type CheckInInput = {
   vehicle_type?: string | null;
   driver_type: DriverType;
   entry_method: EntryMethod;
-  contact_name?: string | null;
-  contact_phone?: string | null;
   comments?: string | null;
   imageUri?: string | null;
 };
@@ -154,6 +217,12 @@ function buildCheckInForm(input: CheckInInput): FormData {
   return form;
 }
 
+function buildCheckInJson(input: CheckInInput): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(input).filter(([key, value]) => key !== 'imageUri' && value != null),
+  );
+}
+
 export async function checkIn(input: CheckInInput): Promise<Transaction> {
   if (USE_FIXTURES) {
     const area = fx.parkingAreas.find((a) => a.id === input.parking_area_id) ?? fx.parkingAreas[0];
@@ -169,7 +238,7 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
       const created = {
         id: fx.nextId(fx.drivers),
         full_name: input.driver_name.trim(),
-        phone: null,
+        phone: input.driver_phone ?? null,
         email: null,
         company_name: input.driver_company_name ?? null,
         license_no: null,
@@ -185,12 +254,16 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
     } else if (driverId) {
       const existing = fx.drivers.find((d) => d.id === driverId);
       driverName = existing?.full_name;
+      if (existing && input.driver_phone?.trim()) {
+        existing.phone = input.driver_phone.trim();
+      }
       // Non-blank company_name syncs onto the existing driver in place (plan §6A).
       if (existing && input.driver_company_name?.trim()) {
         existing.company_name = input.driver_company_name.trim();
       }
     }
 
+    const resolvedDriver = driverId ? fx.drivers.find((driver) => driver.id === driverId) : undefined;
     const txn: Transaction = {
       id: fx.nextId(fx.transactions),
       transaction_no: `TXN-${10_420 + fx.transactions.length + 1}`,
@@ -206,12 +279,12 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
       car_in_at: nowIso,
       car_out_at: null,
       duration_minutes: null,
+      parked_duration_minutes: 0,
+      parked_duration_label: '0m',
       entry_method: input.entry_method,
       exit_method: null,
       entry_plate_number_raw: input.plate_number.toUpperCase(),
       exit_plate_number_raw: null,
-      contact_name: input.contact_name ?? null,
-      contact_phone: input.contact_phone ?? null,
       comments: input.comments ?? null,
       vehicle_snapshot: { plate_number: input.plate_number.toUpperCase(), make: input.vehicle_make ?? '', model: input.vehicle_model ?? '' },
       driver_snapshot: driverName ? { full_name: driverName } : null,
@@ -220,17 +293,22 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
       building: { id: input.building_id, name: fx.buildings.find((b) => b.id === input.building_id)?.name ?? '' },
       parking_area: { id: area.id, name: area.name },
       parking_space: { id: space.id, space_code: space.space_code },
-      vehicle: { id: input.vehicle_id ?? 0, plate_number: input.plate_number.toUpperCase() },
-      driver: driverId && driverName ? { id: driverId, full_name: driverName } : undefined,
+      vehicle: { id: input.vehicle_id ?? 0, plate_number: input.plate_number.toUpperCase(), plate_state: null },
+      driver: driverId && driverName
+        ? { id: driverId, full_name: driverName, phone: resolvedDriver?.phone, company_name: resolvedDriver?.company_name }
+        : undefined,
       events: [{ id: 1, type: 'check_in', description: `Checked in at ${space.space_code}`, created_at: nowIso }],
     };
     fx.transactions.unshift(txn);
     return fx.delay(txn);
   }
   try {
-    const { data } = await api.post<{ data: Transaction }>('/admin/transactions/check-in', buildCheckInForm(input), {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const request = input.imageUri
+      ? api.post<{ data: Transaction }>('/admin/transactions/check-in', buildCheckInForm(input), {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      : api.post<{ data: Transaction }>('/admin/transactions/check-in', buildCheckInJson(input));
+    const { data } = await request;
     return data.data;
   } catch (e) {
     throw toApiError(e);
@@ -249,6 +327,8 @@ export async function checkOut(id: number, exitMethod: string, comments?: string
       status: 'completed',
       car_out_at: nowIso,
       duration_minutes: dur,
+      parked_duration_minutes: dur,
+      parked_duration_label: formatParkedDuration(dur),
       exit_method: exitMethod,
       comments: comments ?? t.comments,
       events: [...(t.events ?? []), { id: (t.events?.length ?? 0) + 1, type: 'check_out', description: 'Checked out', created_at: nowIso }],
@@ -371,6 +451,26 @@ const EXPORT_META: Record<ExportFormat, { ext: string; mimeType: string; uti: st
   pdf: { ext: 'pdf', mimeType: 'application/pdf', uti: 'com.adobe.pdf' },
 };
 
+/** Extracts and sanitizes a download name from a Content-Disposition header. */
+function filenameFromContentDisposition(header: unknown): string | null {
+  if (typeof header !== 'string') return null;
+
+  const encoded = header.match(/filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i)?.[1];
+  const plain = header.match(/filename\s*=\s*(?:"([^"]+)"|([^;]+))/i);
+  const raw = encoded ?? plain?.[1] ?? plain?.[2];
+  if (!raw) return null;
+
+  let decoded = raw.trim().replace(/^['"]|['"]$/g, '');
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // Keep the server-provided value when it is not URI encoded.
+  }
+
+  const safe = decoded.split(/[\\/]/).pop()?.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return safe || null;
+}
+
 /**
  * Writes bytes/text to a fresh file and returns its `file://` URI. Uses the
  * **Documents** dir, not Caches — iOS's share sheet runs the picked app/
@@ -420,20 +520,24 @@ export async function exportTransactions(format: ExportFormat, params: ListParam
 
   if (USE_FIXTURES) {
     const q = (params.search ?? '').toString().toLowerCase();
-    const dateFrom = params.date_from ? String(params.date_from) : null;
-    const dateTo = params.date_to ? String(params.date_to) : null;
+    const dateFrom = dateBoundary(params.date_from, false);
+    const dateTo = dateBoundary(params.date_to, true);
     const rows = fx.transactions.filter(
-      (t) =>
-        (!params.building_id || t.building_id === Number(params.building_id)) &&
-        (!params.status || t.status === params.status) &&
-        (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
-        (!params.driver_type || t.driver_type === params.driver_type) &&
-        (!dateFrom || (t.car_in_at ?? '') >= dateFrom) &&
-        (!dateTo || (t.car_in_at ?? '').slice(0, 10) <= dateTo) &&
-        (!q ||
-          t.transaction_no.toLowerCase().includes(q) ||
-          (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
-          (t.driver?.full_name ?? '').toLowerCase().includes(q)),
+      (t) => {
+        const entryTime = transactionEntryTime(t);
+        return (
+          (!params.building_id || t.building_id === Number(params.building_id)) &&
+          (!params.status || t.status === params.status) &&
+          (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
+          (!params.driver_type || t.driver_type === params.driver_type) &&
+          (dateFrom === null || entryTime >= dateFrom) &&
+          (dateTo === null || entryTime <= dateTo) &&
+          (!q ||
+            t.transaction_no.toLowerCase().includes(q) ||
+            (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
+            (t.driver?.full_name ?? '').toLowerCase().includes(q))
+        );
+      },
     );
     const filename = `transactions-${stamp}.csv`;
     const uri = writeShareableFile(filename, transactionsCsv(rows));
@@ -442,11 +546,12 @@ export async function exportTransactions(format: ExportFormat, params: ListParam
   }
 
   try {
-    const { data } = await api.get<ArrayBuffer>('/admin/transactions/export', {
+    const { data, headers } = await api.get<ArrayBuffer>('/admin/transactions/export', {
       params: { ...params, format },
       responseType: 'arraybuffer',
     });
-    const filename = `transactions-${stamp}.${meta.ext}`;
+    const filename =
+      filenameFromContentDisposition(headers['content-disposition']) ?? `transactions-${stamp}.${meta.ext}`;
     const uri = writeShareableFile(filename, new Uint8Array(data));
     return { uri, filename, mimeType: meta.mimeType, uti: meta.uti };
   } catch (e) {

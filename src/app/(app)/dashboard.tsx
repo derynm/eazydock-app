@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { fetchDashboard } from '@/api/dashboard';
-import type { DashboardActiveVehicle, DashboardOccupancy } from '@/api/types';
+import type { DashboardActiveVehicle } from '@/api/types';
 import { useActiveCompany, useSession } from '@/auth/session';
 import { Screen } from '@/components/screen';
 import { Banner, Card, Divider, Icon, Skeleton, Text, type IconName } from '@/components/ui';
 import { Layout, Radius, Shadow, Spacing } from '@/constants/theme';
+import { DashboardChartCarousel } from '@/features/dashboard/dashboard-chart-carousel';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useResponsive } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -19,48 +21,25 @@ function accentDataUri(color: string) {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function occupancyRingDataUri({
-  size,
-  strokeWidth,
-  percentage,
-  trackColor,
-  progressColor,
-}: {
-  size: number;
-  strokeWidth: number;
-  percentage: number;
-  trackColor: string;
-  progressColor: string;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const center = size / 2;
-  const circumference = 2 * Math.PI * radius;
-  const progressLength = (percentage / 100) * circumference;
-  const progressCircle =
-    percentage <= 0
-      ? ''
-      : `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${progressColor}" stroke-width="${strokeWidth}" stroke-linecap="round"${
-          percentage < 100
-            ? ` stroke-dasharray="${progressLength} ${circumference - progressLength}"`
-            : ''
-        } transform="rotate(-90 ${center} ${center})"/>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${trackColor}" stroke-width="${strokeWidth}"/>${progressCircle}</svg>`;
-
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
 export default function Dashboard() {
   const theme = useTheme();
   const router = useRouter();
   const company = useActiveCompany();
-  const { user, selectedBuilding } = useSession();
+  const { user, activeCompanyId, selectedBuilding } = useSession();
   const { can } = usePermissions();
   const { width, isTablet } = useResponsive();
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: fetchDashboard,
+    queryKey: ['dashboard', activeCompanyId, selectedBuilding?.id],
+    queryFn: () => fetchDashboard(selectedBuilding?.id),
+    enabled: activeCompanyId !== null,
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+    }, [refetch]),
+  );
 
   const contextName = selectedBuilding?.name ?? company?.name;
   const subtitle = contextName
@@ -158,11 +137,19 @@ export default function Dashboard() {
               />
             </View>
 
-            <OccupancyPanel
-              occupancy={data.occupancy}
-              ringSize={isTablet ? 184 : width < 380 ? 120 : 130}
-              compact={!isTablet}
-            />
+            <Card
+              style={[
+                styles.dashboardCard,
+                styles.sectionCard,
+                !isTablet && styles.sectionCardPhone,
+                Shadow.xs as object,
+              ]}>
+              <DashboardChartCarousel
+                metrics={metrics}
+                occupancy={data.occupancy}
+                ringSize={isTablet ? 184 : width < 380 ? 120 : 130}
+              />
+            </Card>
 
             <Card
               style={[
@@ -280,120 +267,6 @@ function DashboardKpi({
         style={styles.kpiAccent}
       />
     </Card>
-  );
-}
-
-function OccupancyPanel({
-  occupancy,
-  ringSize,
-  compact,
-}: {
-  occupancy: DashboardOccupancy;
-  ringSize: number;
-  compact: boolean;
-}) {
-  const theme = useTheme();
-  const percentage = Math.min(100, Math.max(0, occupancy.percentage));
-
-  return (
-    <Card
-      style={[
-        styles.dashboardCard,
-        styles.sectionCard,
-        compact && styles.sectionCardPhone,
-        Shadow.xs as object,
-      ]}>
-      <Text variant="overline" color="textSecondary" style={styles.sectionTitle}>
-        Occupancy
-      </Text>
-      <View style={styles.occupancyBody}>
-        <OccupancyRing size={ringSize} percentage={percentage} />
-        <View style={styles.occupancyDetails}>
-          <View style={styles.occupancyHeadline}>
-            <Text variant="heading" style={styles.occupancyCount}>
-              {occupancy.occupied_bays} of {occupancy.total_bays}
-            </Text>
-            <Text variant="body" color="textSecondary">
-              bays occupied
-            </Text>
-          </View>
-          <View style={[styles.progressTrack, { backgroundColor: theme.surfaceSunken }]}>
-            <View
-              style={[
-                styles.progressFill,
-                { backgroundColor: theme.success, width: `${percentage}%` },
-              ]}
-            />
-          </View>
-          <View style={styles.occupancyLegend}>
-            <OccupancyLegend
-              color={theme.success}
-              label="Occupied"
-              value={`${occupancy.occupied_bays} bays`}
-            />
-            <OccupancyLegend
-              color={theme.borderStrong}
-              label="Available"
-              value={`${occupancy.available_bays} bays`}
-            />
-          </View>
-        </View>
-      </View>
-    </Card>
-  );
-}
-
-function OccupancyRing({ size, percentage }: { size: number; percentage: number }) {
-  const theme = useTheme();
-  const strokeWidth = size < 140 ? 12 : 15;
-  const ringUri = occupancyRingDataUri({
-    size,
-    strokeWidth,
-    percentage,
-    trackColor: theme.surfaceSunken,
-    progressColor: theme.success,
-  });
-
-  return (
-    <View
-      accessibilityRole="summary"
-      accessibilityLabel={`${percentage}% occupied`}
-      style={[styles.ring, { width: size, height: size }]}>
-      <Image
-        pointerEvents="none"
-        source={{ uri: ringUri }}
-        contentFit="contain"
-        cachePolicy="none"
-        style={[styles.ringGraphic, { width: size, height: size }]}
-      />
-      <View style={styles.ringLabel}>
-        <Text
-          variant="display"
-          style={[styles.ringPercentage, size < 140 && styles.ringPercentageCompact]}
-          numberOfLines={1}>
-          {percentage}%
-        </Text>
-        <Text variant="caption" color="textSecondary">
-          Occupied
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function OccupancyLegend({ color, label, value }: { color: string; label: string; value: string }) {
-  return (
-    <View style={styles.legendItem}>
-      <View style={styles.legendLabel}>
-        <View style={[styles.legendDot, { backgroundColor: color }]} />
-        <Text variant="caption" color="textSecondary">
-          {label}
-        </Text>
-      </View>
-      <Text variant="caption" color="textMuted" style={styles.legendValue}>
-        {value}
-      </Text>
-    </View>
   );
 }
 
@@ -676,22 +549,6 @@ const styles = StyleSheet.create({
   sectionCard: { padding: Spacing.xl, gap: Spacing.xl },
   sectionCardPhone: { padding: Spacing.lg, gap: Spacing.md },
   sectionTitle: { fontSize: 12, lineHeight: 16, letterSpacing: 0.9 },
-  occupancyBody: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
-  occupancyDetails: { flex: 1, minWidth: 0, gap: Spacing.md },
-  occupancyHeadline: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'nowrap', gap: 5 },
-  occupancyCount: { fontSize: 21, lineHeight: 26 },
-  progressTrack: { height: 10, borderRadius: Radius.pill, overflow: 'hidden' },
-  progressFill: { height: '100%', minWidth: 5, borderRadius: Radius.pill },
-  occupancyLegend: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: Spacing.sm },
-  legendItem: { flex: 1, minWidth: 0, gap: 3 },
-  legendLabel: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  legendDot: { width: 9, height: 9, borderRadius: Radius.pill },
-  legendValue: { paddingLeft: Spacing.lg },
-  ring: { position: 'relative', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  ringGraphic: { position: 'absolute', left: 0, top: 0 },
-  ringLabel: { alignItems: 'center', gap: 1 },
-  ringPercentage: { fontSize: 30, lineHeight: 34 },
-  ringPercentageCompact: { fontSize: 26, lineHeight: 30 },
   quickActions: { flexDirection: 'row', alignItems: 'stretch', gap: Spacing.sm },
   quickAction: {
     flex: 1,

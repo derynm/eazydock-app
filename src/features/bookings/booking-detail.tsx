@@ -12,6 +12,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 import { formatDateTime, formatPlate, titleCase } from '@/lib/format';
+import { toSydneyDateTimeValue } from '@/lib/sydney-time';
 import { ENTRY_METHODS } from '@/lib/options';
 import { statusMeta } from '@/lib/status';
 
@@ -75,9 +76,9 @@ export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () =>
         <Card>
           <Section title="Schedule">
             <View>
-              <KeyValue label="Starts" value={formatDateTime(booking.starts_at)} icon="bookings" />
+              <KeyValue label="Starts" value={formatDateTime(toSydneyDateTimeValue(booking.starts_at))} icon="bookings" />
               <Divider />
-              <KeyValue label="Ends" value={formatDateTime(booking.ends_at)} icon="clock" />
+              <KeyValue label="Ends" value={formatDateTime(toSydneyDateTimeValue(booking.ends_at))} icon="clock" />
             </View>
           </Section>
         </Card>
@@ -96,15 +97,21 @@ export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () =>
           </Section>
         </Card>
 
-        <Card>
-          <Section title="Contact">
-            <View>
-              <KeyValue label="Name" value={booking.contact_name} icon="user" />
-              <Divider />
-              <KeyValue label="Phone" value={booking.contact_phone} icon="phone" />
-            </View>
-          </Section>
-        </Card>
+        {booking.driver ? (
+          <Card>
+            <Section title="Driver">
+              <View>
+                <KeyValue label="Name" value={booking.driver.full_name} icon="user" />
+                <Divider />
+                <KeyValue label="Phone" value={booking.driver.phone} icon="phone" />
+                <Divider />
+                <KeyValue label="Email" value={booking.driver.email} icon="mail" />
+                <Divider />
+                <KeyValue label="Company" value={booking.driver.company_name} icon="building" />
+              </View>
+            </Section>
+          </Card>
+        ) : null}
 
         {booking.notes ? (
           <Card>

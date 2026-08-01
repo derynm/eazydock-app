@@ -6,7 +6,6 @@ import { toApiError } from '@/api/client';
 import { lookupParkingSpaces } from '@/api/lookups';
 import { cancelTransaction, changeSpace, checkOut, getTransaction, markOverstay } from '@/api/transactions';
 import { markOverstaySchema, type MarkOverstayForm } from '@/api/schemas';
-import type { TransactionEvent } from '@/api/types';
 import { Badge, Button, Card, Divider, EmptyState, KeyValue, Section, Select, Skeleton, Text, TextField } from '@/components/ui';
 import { zodResolver } from '@/lib/zod-resolver';
 import { FormSheet } from '@/components/form-sheet';
@@ -14,39 +13,10 @@ import { Radius, Spacing } from '@/constants/theme';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
-import { formatDateTime, formatPlate, timeAgo, titleCase } from '@/lib/format';
+import { formatDate, formatDateTime, formatDuration, formatPlate, formatTime, titleCase } from '@/lib/format';
+import { toSydneyDateTimeValue } from '@/lib/sydney-time';
 import { useForm, Controller } from 'react-hook-form';
 import { transactionStatusMeta } from '@/lib/status';
-
-const EVENT_LABELS: Record<string, string> = {
-  car_in: 'Checked in',
-  check_in: 'Checked in',
-  car_out: 'Checked out',
-  check_out: 'Checked out',
-  space_changed: 'Bay changed',
-  change_space: 'Bay changed',
-  cancelled: 'Cancelled',
-  corrected: 'Corrected',
-  overstay: 'Overstay flagged',
-};
-
-function eventType(event: TransactionEvent) {
-  return event.event_type ?? event.type ?? '';
-}
-
-function eventTitle(event: TransactionEvent) {
-  const description = event.description?.trim();
-  if (description) return description;
-
-  const type = eventType(event);
-  const fallback = titleCase(type);
-  return EVENT_LABELS[type] ?? (fallback || 'Transaction updated');
-}
-
-function eventComment(event: TransactionEvent) {
-  const comment = event.comments?.trim();
-  return comment && comment !== event.description?.trim() ? comment : null;
-}
 
 function minutesBetween(startIso?: string | null, endIso?: string | null) {
   if (!startIso) return null;
@@ -73,9 +43,8 @@ function formatDurationWithDays(minutes?: number | null) {
   return parts.join(' ');
 }
 
-function transactionDuration(carInAt: string | null, carOutAt: string | null, durationMinutes: number | null, isActive: boolean) {
-  const calculated = minutesBetween(carInAt, isActive ? null : carOutAt);
-  return formatDurationWithDays(calculated ?? durationMinutes);
+function sydneyValue(value?: string | null): string | null {
+  return value ? toSydneyDateTimeValue(value) : null;
 }
 
 export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: () => void }) {
@@ -92,6 +61,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
     qc.invalidateQueries({ queryKey: ['transaction', id] });
     qc.invalidateQueries({ queryKey: ['transactions'] });
     qc.invalidateQueries({ queryKey: ['active-vehicles'] });
+    qc.invalidateQueries({ queryKey: ['transaction-scope-count'] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     onChanged?.();
   };
@@ -113,9 +83,12 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
   const canUpdate = can('operations.transactions', 'update');
   const canCancel = can('operations.transactions', 'delete');
   const canMarkOverstay = can('operations.incidents', 'create') && txn.status === 'active';
-  const events = txn.events ?? [];
-  const duration = transactionDuration(txn.car_in_at, txn.car_out_at, txn.duration_minutes, isActive);
+  const fallbackDuration = txn.parked_duration_minutes ??
+    minutesBetween(txn.car_in_at, isActive ? null : txn.car_out_at) ??
+    txn.duration_minutes;
+  const duration = txn.parked_duration_label || formatDurationWithDays(fallbackDuration);
   const driverCompanyName = txn.driver?.company_name ?? txn.driver_snapshot?.company_name;
+  const visitSummary = txn.driver_visit_summary;
 
   return (
     <>
@@ -167,44 +140,45 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
               <Divider />
               <KeyValue label="Company" value={driverCompanyName} icon="building" />
               <Divider />
-              <KeyValue label="Checked in" value={formatDateTime(txn.car_in_at)} icon="carIn" />
+              <KeyValue label="Checked in" value={formatDateTime(sydneyValue(txn.car_in_at))} icon="carIn" />
               <Divider />
-              <KeyValue label="Checked out" value={txn.car_out_at ? formatDateTime(txn.car_out_at) : null} icon="carOut" />
+              <KeyValue label="Checked out" value={formatDateTime(sydneyValue(txn.car_out_at))} icon="carOut" />
               <Divider />
               <KeyValue label="Duration" value={duration} icon="clock" />
               <Divider />
-              <KeyValue label="Contact phone" value={txn.contact_phone} icon="phone" />
+              <KeyValue label="Driver phone" value={txn.driver?.phone} icon="phone" />
             </View>
           </Section>
         </Card>
 
-        {events.length > 0 ? (
+        {visitSummary ? (
           <Card>
-            <Section title="Timeline">
-              <View style={styles.timeline}>
-                {events.map((e, i) => {
-                  const comment = eventComment(e);
-
-                  return (
-                    <View key={e.id} style={styles.event}>
-                      <View style={styles.eventRail}>
-                        <View style={[styles.eventDot, { backgroundColor: theme.primary }]} />
-                        {i < events.length - 1 ? <View style={[styles.eventLine, { backgroundColor: theme.border }]} /> : null}
-                      </View>
-                      <View style={styles.eventBody}>
-                        <Text variant="bodyStrong">{eventTitle(e)}</Text>
-                        {comment ? (
-                          <Text variant="caption" color="textSecondary">
-                            {comment}
-                          </Text>
-                        ) : null}
-                        <Text variant="caption" color="textMuted">
-                          {timeAgo(e.created_at)}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
+            <Section title="Driver history">
+              <View>
+                <KeyValue label="Total visits" value={String(visitSummary.total_visits)} icon="transactions" />
+                <Divider />
+                <KeyValue label="Total time" value={formatDuration(visitSummary.total_duration_minutes)} icon="clock" />
+                {visitSummary.last_visit ? (
+                  <>
+                    <Divider />
+                    <KeyValue label="Last visited" value={formatDate(sydneyValue(visitSummary.last_visit.car_in_at))} icon="bookings" />
+                    <Divider />
+                    <KeyValue label="Checked in" value={formatTime(sydneyValue(visitSummary.last_visit.car_in_at))} icon="carIn" />
+                    <Divider />
+                    <KeyValue label="Checked out" value={formatTime(sydneyValue(visitSummary.last_visit.car_out_at))} icon="carOut" />
+                    <Divider />
+                    <KeyValue label="Last visit duration" value={formatDuration(visitSummary.last_visit.duration_minutes)} icon="clock" />
+                    <Divider />
+                    <KeyValue label="Visited" value={visitSummary.last_visit.tenant?.name} icon="tenants" />
+                  </>
+                ) : (
+                  <>
+                    <Divider />
+                    <Text variant="body" color="textSecondary" style={styles.noPreviousVisit}>
+                      No previous completed visits.
+                    </Text>
+                  </>
+                )}
               </View>
             </Section>
           </Card>
@@ -355,10 +329,5 @@ const styles = StyleSheet.create({
   heroBadges: { flexDirection: 'row', gap: Spacing.sm },
   actions: { flexDirection: 'row', gap: Spacing.sm },
   flex: { flex: 1 },
-  timeline: { gap: 0 },
-  event: { flexDirection: 'row', gap: Spacing.md },
-  eventRail: { alignItems: 'center', width: 16 },
-  eventDot: { width: 12, height: 12, borderRadius: 6, marginTop: 4 },
-  eventLine: { width: 2, flex: 1, marginVertical: 2 },
-  eventBody: { flex: 1, paddingBottom: Spacing.lg, gap: 2 },
+  noPreviousVisit: { paddingVertical: Spacing.md },
 });

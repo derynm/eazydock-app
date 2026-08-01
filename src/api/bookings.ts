@@ -1,4 +1,5 @@
 import { api, toApiError, USE_FIXTURES } from './client';
+import { toSydneyDateTimeValue } from '@/lib/sydney-time';
 import * as fx from './fixtures';
 import type { Booking, BookingsBySpaceGroup, BookingsBySpaceResponse, Building, DriverType, ListParams, Paginator, ParkingArea, ParkingSpace, SpaceStatus, Tenant } from './types';
 
@@ -9,12 +10,11 @@ export type BookingInput = {
   tenant_id?: number | null;
   driver_id?: number | null;
   driver_name?: string | null;
+  driver_phone?: string | null;
   driver_company_name?: string | null;
   vehicle_id?: number | null;
   driver_type: DriverType;
   plate_number: string;
-  contact_name?: string | null;
-  contact_phone?: string | null;
   starts_at: string;
   ends_at: string;
   notes?: string | null;
@@ -27,6 +27,14 @@ export type BookingFormData = {
   tenants: Pick<Tenant, 'id' | 'name'>[];
   drivers: { id: number; full_name: string }[];
 };
+
+function withSydneyDateTimes(input: BookingInput): BookingInput {
+  return {
+    ...input,
+    starts_at: toSydneyDateTimeValue(input.starts_at),
+    ends_at: toSydneyDateTimeValue(input.ends_at),
+  };
+}
 
 export type BookingsBySpaceParams = {
   date: string;
@@ -46,7 +54,6 @@ export async function listBookings(params: ListParams = {}): Promise<Paginator<B
           !query ||
           booking.booking_no.toLowerCase().includes(query) ||
           booking.plate_number_raw.toLowerCase().includes(query) ||
-          (booking.contact_name ?? '').toLowerCase().includes(query) ||
           (booking.driver?.full_name ?? '').toLowerCase().includes(query) ||
           (booking.tenant?.name ?? '').toLowerCase().includes(query);
 
@@ -95,7 +102,7 @@ export async function listBookingsBySpace(params: BookingsBySpaceParams): Promis
         if (q && !(
           b.booking_no.toLowerCase().includes(q) ||
           b.plate_number_raw.toLowerCase().includes(q) ||
-          (b.contact_name ?? '').toLowerCase().includes(q)
+          (b.driver?.full_name ?? '').toLowerCase().includes(q)
         )) return false;
         return true;
       });
@@ -169,6 +176,9 @@ function resolveFixtureDriverId(input: BookingInput): number | null {
   if (input.driver_id) {
     // Non-blank company_name syncs onto the existing driver in place (plan §6A).
     const existing = fx.drivers.find((d) => d.id === input.driver_id);
+    if (existing && input.driver_phone?.trim()) {
+      existing.phone = input.driver_phone.trim();
+    }
     if (existing && input.driver_company_name?.trim()) {
       existing.company_name = input.driver_company_name.trim();
     }
@@ -180,7 +190,7 @@ function resolveFixtureDriverId(input: BookingInput): number | null {
   const created = {
     id: fx.nextId(fx.drivers),
     full_name: input.driver_name.trim(),
-    phone: null,
+    phone: input.driver_phone ?? null,
     email: null,
     company_name: input.driver_company_name ?? null,
     license_no: null,
@@ -195,34 +205,37 @@ function resolveFixtureDriverId(input: BookingInput): number | null {
 }
 
 export async function createBooking(input: BookingInput): Promise<Booking> {
+  const payload = withSydneyDateTimes(input);
   if (USE_FIXTURES) {
-    const driverId = resolveFixtureDriverId(input);
+    const driverId = resolveFixtureDriverId(payload);
+    const driver = driverId ? fx.drivers.find((candidate) => candidate.id === driverId) : undefined;
     const booking: Booking = {
       id: fx.nextId(fx.bookings),
       booking_no: `BK-${5_200 + fx.bookings.length + 1}`,
       status: 'pending',
-      building_id: input.building_id,
-      parking_area_id: input.parking_area_id,
-      parking_space_id: input.parking_space_id,
-      tenant_id: input.tenant_id ?? null,
+      building_id: payload.building_id,
+      parking_area_id: payload.parking_area_id,
+      parking_space_id: payload.parking_space_id,
+      tenant_id: payload.tenant_id ?? null,
       driver_id: driverId,
-      vehicle_id: input.vehicle_id ?? null,
-      driver_type: input.driver_type,
-      plate_number_raw: input.plate_number.toUpperCase(),
-      contact_name: input.contact_name ?? null,
-      contact_phone: input.contact_phone ?? null,
-      starts_at: input.starts_at,
-      ends_at: input.ends_at,
-      notes: input.notes ?? null,
+      vehicle_id: payload.vehicle_id ?? null,
+      driver_type: payload.driver_type,
+      plate_number_raw: payload.plate_number.toUpperCase(),
+      starts_at: payload.starts_at,
+      ends_at: payload.ends_at,
+      notes: payload.notes ?? null,
       parking_transaction_id: null,
       created_at: new Date().toISOString(),
-      ...relations(input),
+      ...relations(payload),
+      driver: driver
+        ? { id: driver.id, full_name: driver.full_name, phone: driver.phone, email: driver.email, company_name: driver.company_name }
+        : undefined,
     };
     fx.bookings.unshift(booking);
     return fx.delay(booking);
   }
   try {
-    const { data } = await api.post<{ data: Booking }>('/admin/bookings', input);
+    const { data } = await api.post<{ data: Booking }>('/admin/bookings', payload);
     return data.data;
   } catch (e) {
     throw toApiError(e);
@@ -230,21 +243,26 @@ export async function createBooking(input: BookingInput): Promise<Booking> {
 }
 
 export async function updateBooking(id: number, input: BookingInput): Promise<Booking> {
+  const payload = withSydneyDateTimes(input);
   if (USE_FIXTURES) {
     const idx = fx.bookings.findIndex((b) => b.id === id);
     if (idx < 0) throw toApiError({ response: { status: 404, data: { message: 'Booking not found' } } });
-    const driverId = resolveFixtureDriverId(input);
+    const driverId = resolveFixtureDriverId(payload);
+    const driver = driverId ? fx.drivers.find((candidate) => candidate.id === driverId) : undefined;
     fx.bookings[idx] = {
       ...fx.bookings[idx],
-      ...input,
+      ...payload,
       driver_id: driverId,
-      plate_number_raw: input.plate_number.toUpperCase(),
-      ...relations(input),
+      plate_number_raw: payload.plate_number.toUpperCase(),
+      ...relations(payload),
+      driver: driver
+        ? { id: driver.id, full_name: driver.full_name, phone: driver.phone, email: driver.email, company_name: driver.company_name }
+        : undefined,
     };
     return fx.delay(fx.bookings[idx]);
   }
   try {
-    const { data } = await api.put<{ data: Booking }>(`/admin/bookings/${id}`, input);
+    const { data } = await api.put<{ data: Booking }>(`/admin/bookings/${id}`, payload);
     return data.data;
   } catch (e) {
     throw toApiError(e);

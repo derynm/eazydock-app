@@ -2,62 +2,49 @@ import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/d
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
-import { useErrorScrollField } from '@/components/form-error-scroll';
 import { Radius, Spacing } from '@/constants/theme';
 import { useScheme, useTheme } from '@/hooks/use-theme';
-import { formatDateTime } from '@/lib/format';
-import {
-  pickerDateFromSydneyValue,
-  sydneyDateTimeValueFromPicker,
-  sydneyNowPickerDate,
-  toSydneyDateTimeValue,
-} from '@/lib/sydney-time';
+import { formatDate } from '@/lib/format';
 
 import { Button } from './button';
 import { Icon } from './icon';
 import { PickerSheetModal } from './picker-sheet-modal';
 import { Text } from './text';
 
+function toISODate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function fromISODate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return year && month && day ? new Date(year, month - 1, day) : new Date();
+}
+
 type Props = {
-  label?: string;
-  value: string; // ISO or ''
-  onChange: (iso: string) => void;
-  error?: string;
-  required?: boolean;
-  clearable?: boolean;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
   placeholder?: string;
 };
 
-export function DateTimeField({
-  label,
-  value,
-  onChange,
-  error,
-  required,
-  clearable = false,
-  placeholder = 'Select date & time',
-}: Props) {
+/** Date-only picker whose value is represented as `YYYY-MM-DD`. */
+export function DateField({ label, value, onChange, placeholder = 'Date' }: Props) {
   const theme = useTheme();
   const scheme = useScheme();
   const [iosOpen, setIosOpen] = useState(false);
-  const [draft, setDraft] = useState<Date>(() => (value ? pickerDateFromSydneyValue(value) : sydneyNowPickerDate()));
-  const errorScrollRef = useErrorScrollField(error);
+  const [draft, setDraft] = useState<Date>(() => (value ? fromISODate(value) : new Date()));
 
   const open = () => {
-    const base = value ? pickerDateFromSydneyValue(value) : sydneyNowPickerDate();
+    const base = value ? fromISODate(value) : new Date();
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: base,
         mode: 'date',
         onChange: (_, picked) => {
-          if (!picked) return;
-          DateTimePickerAndroid.open({
-            value: picked,
-            mode: 'time',
-            onChange: (__, time) => {
-              if (time) onChange(sydneyDateTimeValueFromPicker(time));
-            },
-          });
+          if (picked) onChange(toISODate(picked));
         },
       });
     } else {
@@ -67,46 +54,32 @@ export function DateTimeField({
   };
 
   return (
-    <View ref={errorScrollRef} style={styles.field}>
-      {label ? (
-        <Text variant="label" color="textSecondary">
-          {label}
-          {required ? <Text variant="label" tint={theme.danger}> *</Text> : null}
-        </Text>
-      ) : null}
+    <View style={styles.field}>
+      <Text variant="label" color="textSecondary">{label}</Text>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${label ?? 'Date and time'}: ${value ? formatDateTime(toSydneyDateTimeValue(value)) : placeholder}`}
+        accessibilityLabel={`${label}: ${value || placeholder}`}
         onPress={open}
         style={({ pressed }) => [
           styles.trigger,
-          { backgroundColor: theme.surface, borderColor: error ? theme.danger : theme.border },
+          { backgroundColor: theme.surface, borderColor: theme.border },
           pressed && { borderColor: theme.primary },
         ]}>
-        <Icon name="bookings" size={18} color={theme.textMuted} />
         <Text variant="body" color={value ? 'text' : 'textMuted'} style={styles.flex}>
-          {value ? formatDateTime(toSydneyDateTimeValue(value)) : placeholder}
+          {value ? formatDate(value) : placeholder}
         </Text>
-        {value && clearable ? (
+        {value ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Clear ${(label ?? 'date and time').toLowerCase()}`}
+            accessibilityLabel={`Clear ${label.toLowerCase()}`}
             hitSlop={8}
-            onPress={(event) => {
-              event.stopPropagation();
-              onChange('');
-            }}>
+            onPress={() => onChange('')}>
             <Icon name="close" size={16} color={theme.textMuted} />
           </Pressable>
         ) : (
           <Icon name="chevronDown" size={18} color={theme.textMuted} />
         )}
       </Pressable>
-      {error ? (
-        <Text variant="caption" tint={theme.danger}>
-          {error}
-        </Text>
-      ) : null}
 
       {Platform.OS === 'ios' ? (
         <PickerSheetModal visible={iosOpen} onClose={() => setIosOpen(false)}>
@@ -114,9 +87,9 @@ export function DateTimeField({
             <>
               <DateTimePicker
                 value={draft}
-                mode="datetime"
+                mode="date"
                 display="spinner"
-                onChange={(_, d) => d && setDraft(d)}
+                onChange={(_, date) => date && setDraft(date)}
                 themeVariant={scheme}
                 style={styles.picker}
               />
@@ -124,7 +97,7 @@ export function DateTimeField({
                 title="Confirm"
                 icon="check"
                 onPress={() => {
-                  onChange(sydneyDateTimeValueFromPicker(draft));
+                  onChange(toISODate(draft));
                   dismiss();
                 }}
                 fullWidth
@@ -138,7 +111,7 @@ export function DateTimeField({
 }
 
 const styles = StyleSheet.create({
-  field: { gap: Spacing.sm },
+  field: { gap: Spacing.xs },
   flex: { flex: 1 },
   trigger: {
     flexDirection: 'row',

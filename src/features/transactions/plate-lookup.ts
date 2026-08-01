@@ -78,7 +78,7 @@ export async function lookupPlate(plate: string): Promise<PlateProfile> {
         driverName: suggestedDriver?.full_name,
         driverCompanyName: suggestedDriver?.company_name ?? null,
         tenantId: last?.tenant_id ?? null,
-        tenantName: last?.tenant?.name ?? last?.tenant_snapshot?.name,
+        tenantName: last?.tenant?.name ?? last?.tenant_snapshot?.name ?? undefined,
         driverType: last?.driver_type,
         activeTransaction: active
           ? {

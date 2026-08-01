@@ -24,8 +24,7 @@ const EMPTY: BookingFormValues = {
   vehicle_id: null,
   driver_type: 'delivery',
   plate_number: '',
-  contact_name: '',
-  contact_phone: '',
+  driver_phone: '',
   starts_at: '',
   ends_at: '',
   notes: '',
@@ -41,12 +40,11 @@ const toInput = (v: BookingFormValues, driverText: string, driverCompany: string
     tenant_id: v.tenant_id ?? null,
     driver_id: v.driver_id ?? null,
     driver_name: creatingDriver ? driverText.trim() : null,
+    driver_phone: v.driver_phone || null,
     driver_company_name: hasDriver ? driverCompany || null : null,
     vehicle_id: v.vehicle_id ?? null,
     driver_type: v.driver_type,
     plate_number: v.plate_number,
-    contact_name: v.contact_name || null,
-    contact_phone: v.contact_phone || null,
     starts_at: v.starts_at,
     ends_at: v.ends_at,
     notes: v.notes || null,
@@ -74,8 +72,7 @@ export function BookingForm({ visible, booking, onClose }: Props) {
             vehicle_id: booking.vehicle_id,
             driver_type: booking.driver_type,
             plate_number: booking.plate_number_raw,
-            contact_name: booking.contact_name ?? '',
-            contact_phone: booking.contact_phone ?? '',
+            driver_phone: booking.driver?.phone ?? '',
             starts_at: booking.starts_at,
             ends_at: booking.ends_at,
             notes: booking.notes ?? '',
@@ -98,7 +95,6 @@ export function BookingForm({ visible, booking, onClose }: Props) {
   const areas = (formData?.areas ?? []).filter((a) => a.building_id === buildingId);
   const spaces = (formData?.spaces ?? []).filter((s) => s.parking_area_id === areaId);
   const tenants = formData?.tenants ?? [];
-  const drivers = useMemo(() => formData?.drivers ?? [], [formData?.drivers]);
   const driverId = watch('driver_id');
 
   useEffect(() => {
@@ -109,13 +105,10 @@ export function BookingForm({ visible, booking, onClose }: Props) {
 
     const key = `${booking?.id ?? 'new'}:${booking?.driver_id ?? 'none'}`;
     if (initializedDriver.current === key) return;
-    if (booking?.driver_id && drivers.length === 0) return;
-
-    const selected = booking?.driver_id ? drivers.find((driver) => driver.id === booking.driver_id) : undefined;
-    setDriverText(selected?.full_name ?? (booking?.driver_id ? `Driver #${booking.driver_id}` : ''));
-    setDriverCompany('');
+    setDriverText(booking?.driver?.full_name ?? (booking?.driver_id ? `Driver #${booking.driver_id}` : ''));
+    setDriverCompany(booking?.driver?.company_name ?? '');
     initializedDriver.current = key;
-  }, [booking?.driver_id, booking?.id, drivers, visible]);
+  }, [booking?.driver, booking?.driver_id, booking?.id, visible]);
 
   const mutation = useMutation({
     mutationFn: (v: BookingFormValues) =>
@@ -231,19 +224,21 @@ export function BookingForm({ visible, booking, onClose }: Props) {
             id: driver.id,
             label: driver.full_name,
             hint: driver.company_name ?? driver.phone ?? undefined,
+            data: { phone: driver.phone, companyName: driver.company_name },
           }))
         }
         onSelect={(item) => {
           setDriverText(item.label);
-          setDriverCompany('');
+          setValue('driver_phone', item.data?.phone ?? '');
+          setDriverCompany(item.data?.companyName ?? '');
           setValue('driver_id', item.id);
         }}
       />
       <Controller
         control={control}
-        name="contact_phone"
+        name="driver_phone"
         render={({ field, fieldState }) => (
-          <TextField label="Contact phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
+          <TextField label="Driver phone" icon="phone" keyboardType="phone-pad" placeholder="04xx xxx xxx" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />
         )}
       />
       <AutocompleteField

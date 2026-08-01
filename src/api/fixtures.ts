@@ -30,6 +30,11 @@ export const PER_PAGE = 20;
 const now = Date.now();
 const iso = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();
 const isoAhead = (minsAhead: number) => new Date(now + minsAhead * 60_000).toISOString();
+const durationLabel = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours > 0 ? `${hours}h${remainder > 0 ? ` ${remainder}m` : ''}` : `${remainder}m`;
+};
 
 /* ---- Auth / company ---- */
 export const companies: Company[] = [
@@ -210,12 +215,12 @@ export const transactions: Transaction[] = Array.from({ length: 34 }).map((_, i)
     car_in_at: iso(inMins),
     car_out_at: active || status === 'cancelled' ? null : iso(inMins - dur),
     duration_minutes: active ? null : dur,
+    parked_duration_minutes: dur,
+    parked_duration_label: durationLabel(dur),
     entry_method: 'manual_entry',
     exit_method: active ? null : 'manual_entry',
     entry_plate_number_raw: vehicle.plate_number,
     exit_plate_number_raw: active ? null : vehicle.plate_number,
-    contact_name: i % 4 === 0 ? driver.full_name : null,
-    contact_phone: i % 4 === 0 ? driver.phone : null,
     comments: i % 5 === 0 ? 'Refrigerated delivery — priority bay.' : null,
     vehicle_snapshot: { plate_number: vehicle.plate_number, make: vehicle.make ?? '', model: vehicle.model ?? '' },
     driver_snapshot: { full_name: driver.full_name, company_name: driver.company_name ?? '' },
@@ -225,8 +230,8 @@ export const transactions: Transaction[] = Array.from({ length: 34 }).map((_, i)
     parking_area: { id: area.id, name: area.name },
     parking_space: { id: space.id, space_code: space.space_code },
     tenant: { id: tenant.id, name: tenant.name },
-    driver: { id: driver.id, full_name: driver.full_name },
-    vehicle: { id: vehicle.id, plate_number: vehicle.plate_number },
+    driver: { id: driver.id, full_name: driver.full_name, phone: driver.phone, email: driver.email, company_name: driver.company_name },
+    vehicle: { id: vehicle.id, plate_number: vehicle.plate_number, plate_state: vehicle.plate_state },
     events: [
       { id: 1, type: 'check_in', description: `Checked in at ${space.space_code}`, created_at: iso(inMins) },
       ...(overstay ? [{ id: 2, type: 'overstay', description: 'Flagged as overstay', created_at: iso(inMins - 240) }] : []),
@@ -256,8 +261,6 @@ export const bookings: Booking[] = Array.from({ length: 18 }).map((_, i) => {
     vehicle_id: vehicle.id,
     driver_type: DRIVER_TYPES[i % DRIVER_TYPES.length],
     plate_number_raw: vehicle.plate_number,
-    contact_name: driver.full_name,
-    contact_phone: driver.phone,
     starts_at: startMin >= 0 ? isoAhead(startMin) : iso(-startMin),
     ends_at: startMin >= 0 ? isoAhead(startMin + 120) : iso(-startMin - 120),
     notes: i % 4 === 0 ? 'Bulky furniture delivery.' : null,
@@ -267,7 +270,7 @@ export const bookings: Booking[] = Array.from({ length: 18 }).map((_, i) => {
     parking_area: { id: area.id, name: area.name },
     parking_space: { id: space.id, space_code: space.space_code },
     tenant: { id: tenant.id, name: tenant.name },
-    driver: { id: driver.id, full_name: driver.full_name },
+    driver: { id: driver.id, full_name: driver.full_name, phone: driver.phone, email: driver.email, company_name: driver.company_name },
   };
 });
 
@@ -367,9 +370,6 @@ export function dashboard(): DashboardResponse {
       0,
       Math.floor((now - new Date(transaction.car_in_at ?? now).getTime()) / 60_000),
     );
-    const hours = Math.floor(parkedMinutes / 60);
-    const minutes = parkedMinutes % 60;
-    const parkedLabel = hours > 0 ? `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}` : `${minutes}m`;
     const vehicle = vehicles.find((item) => item.id === transaction.vehicle_id);
 
     return {
@@ -384,7 +384,7 @@ export function dashboard(): DashboardResponse {
       car_out_at: null,
       duration_minutes: null,
       parked_duration_minutes: parkedMinutes,
-      parked_duration_label: parkedLabel,
+      parked_duration_label: durationLabel(parkedMinutes),
       entry_plate_number_raw: transaction.entry_plate_number_raw,
       parking_area: transaction.parking_area ?? null,
       parking_space: transaction.parking_space ?? null,

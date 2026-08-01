@@ -105,6 +105,21 @@ export type TransactionEvent = {
   created_at: string;
 };
 
+export type DriverLastVisit = {
+  id: number;
+  transaction_no: string;
+  car_in_at: string | null;
+  car_out_at: string | null;
+  duration_minutes: number | null;
+  tenant: { id: number; name: string } | null;
+};
+
+export type DriverVisitSummary = {
+  total_visits: number;
+  total_duration_minutes: number;
+  last_visit: DriverLastVisit | null;
+};
+
 export type Transaction = {
   id: number;
   transaction_no: string;
@@ -120,25 +135,32 @@ export type Transaction = {
   car_in_at: string | null;
   car_out_at: string | null;
   duration_minutes: number | null;
+  parked_duration_minutes: number;
+  parked_duration_label: string;
   entry_method: EntryMethod | null;
   exit_method: string | null;
   entry_plate_number_raw: string | null;
   exit_plate_number_raw: string | null;
-  contact_name: string | null;
-  contact_phone: string | null;
   comments: string | null;
-  vehicle_snapshot: Record<string, string> | null;
-  driver_snapshot: Record<string, string> | null;
-  tenant_snapshot: Record<string, string> | null;
+  vehicle_snapshot: Record<string, string | null> | null;
+  driver_snapshot?: Record<string, string | null> | null;
+  tenant_snapshot: Record<string, string | null> | null;
   created_at: string;
   // present on show
   building?: { id: number; name: string };
   parking_area?: { id: number; name: string };
   parking_space?: { id: number; space_code: string };
   tenant?: { id: number; name: string };
-  driver?: { id: number; full_name: string; company_name?: string | null };
-  vehicle?: { id: number; plate_number: string };
+  driver?: {
+    id: number;
+    full_name: string;
+    phone?: string | null;
+    email?: string | null;
+    company_name?: string | null;
+  };
+  vehicle?: { id: number; plate_number: string; plate_state?: string | null };
   events?: TransactionEvent[];
+  driver_visit_summary?: DriverVisitSummary | null;
 };
 
 export type SpaceStatus = 'occupied' | 'booked' | 'available';
@@ -166,8 +188,6 @@ export type Booking = {
   vehicle_id: number | null;
   driver_type: DriverType;
   plate_number_raw: string;
-  contact_name: string | null;
-  contact_phone: string | null;
   starts_at: string;
   ends_at: string;
   notes: string | null;
@@ -177,7 +197,13 @@ export type Booking = {
   parking_area?: { id: number; name: string };
   parking_space?: { id: number; space_code: string };
   tenant?: { id: number; name: string };
-  driver?: { id: number; full_name: string };
+  driver?: {
+    id: number;
+    full_name: string;
+    phone?: string | null;
+    email?: string | null;
+    company_name?: string | null;
+  };
 };
 
 /* ---- Dashboard ---- */

@@ -3,9 +3,9 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { listIncidents } from '@/api/incidents';
-import { Screen } from '@/components/screen';
 import { ResponsiveListDetail } from '@/components/responsive-list-detail';
-import { Badge, Button, FilterSheet, Icon, IconButton, ListRow, Segmented } from '@/components/ui';
+import { Screen } from '@/components/screen';
+import { Badge, Button, DateField, FilterSheet, Icon, IconButton, ListRow, Segmented } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { IncidentDetail } from '@/features/incidents/incident-detail';
 import { IncidentForm } from '@/features/incidents/incident-form';
@@ -40,14 +40,22 @@ export default function IncidentsScreen() {
   const { isTablet } = useResponsive();
   const [status, setStatus] = useState('open');
   const [incidentType, setIncidentType] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [creating, setCreating] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const activeFilterCount = (status && status !== 'open' ? 1 : 0) + (incidentType ? 1 : 0);
+  const activeFilterCount =
+    (status && status !== 'open' ? 1 : 0) +
+    (incidentType ? 1 : 0) +
+    (dateFrom ? 1 : 0) +
+    (dateTo ? 1 : 0);
 
   const list = usePaginatedList(['incidents'], listIncidents, {
     status: status || undefined,
     incident_type: incidentType || undefined,
+    date_from: dateFrom || undefined,
+    date_to: dateTo || undefined,
   });
 
   return (
@@ -115,6 +123,30 @@ export default function IncidentsScreen() {
       <FilterSheet visible={filterOpen} onClose={() => setFilterOpen(false)} title="Filter incidents">
         <Segmented scrollable options={TYPE_FILTERS as never} value={incidentType} onChange={setIncidentType} />
         <Segmented scrollable options={STATUS_FILTERS as never} value={status} onChange={setStatus} />
+        <View style={styles.dateRow}>
+          <View style={styles.dateCol}>
+            <DateField
+              label="From"
+              value={dateFrom}
+              onChange={(value) => {
+                setDateFrom(value);
+                if (value && dateTo && value > dateTo) setDateTo(value);
+              }}
+              placeholder="Date"
+            />
+          </View>
+          <View style={styles.dateCol}>
+            <DateField
+              label="To"
+              value={dateTo}
+              onChange={(value) => {
+                setDateTo(value);
+                if (value && dateFrom && value < dateFrom) setDateFrom(value);
+              }}
+              placeholder="Date"
+            />
+          </View>
+        </View>
       </FilterSheet>
 
       <IncidentForm visible={creating} incident={null} onClose={() => setCreating(false)} />
@@ -126,4 +158,6 @@ const styles = StyleSheet.create({
   icon: { width: 44, height: 44, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
   headerRight: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
   badge: { position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: 4 },
+  dateRow: { flexDirection: 'row', gap: Spacing.md },
+  dateCol: { flex: 1 },
 });

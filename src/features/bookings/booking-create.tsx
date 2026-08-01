@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { KeyboardAvoidingView, Platform, StyleSheet, View, type ScrollView } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, StyleSheet, View, type ScrollView } from 'react-native';
 
 import { createBooking, getBookingFormData, type BookingInput } from '@/api/bookings';
 import { toApiError } from '@/api/client';
@@ -28,8 +28,7 @@ const EMPTY: BookingFormValues = {
   vehicle_id: null,
   driver_type: 'delivery',
   plate_number: '',
-  contact_name: '',
-  contact_phone: '',
+  driver_phone: '',
   starts_at: '',
   ends_at: '',
   notes: '',
@@ -54,6 +53,8 @@ export function BookingCreate() {
   const [topError, setTopError] = useState<string | null>(null);
   const [lookup, setLookup] = useState<LookupState>({ status: 'idle' });
   const [revealed, setRevealed] = useState(false);
+  const [hasOpenedForm, setHasOpenedForm] = useState(false);
+  const [vehicleMatchesQuery, setVehicleMatchesQuery] = useState<string | null>(null);
   const [driverText, setDriverText] = useState('');
   const [driverCompany, setDriverCompany] = useState('');
   const scrollRef = useRef<ScrollView>(null);
@@ -66,6 +67,9 @@ export function BookingCreate() {
   const buildingId = selectedBuilding?.id ?? 0;
   const areaId = watch('parking_area_id');
   const driverId = watch('driver_id');
+  const plateNumber = watch('plate_number');
+  const normalizedPlate = plateNumber.trim().toUpperCase();
+  const hasVehicleMatches = vehicleMatchesQuery === normalizedPlate;
 
   useEffect(() => {
     if (buildingId) setValue('building_id', buildingId);
@@ -88,22 +92,27 @@ export function BookingCreate() {
 
   const runLookup = async () => {
     const plate = getValues('plate_number').trim();
-    if (plate.length < 2) return;
+    if (!plate) return;
 
+    Keyboard.dismiss();
+    setRevealed(false);
     setLookup({ status: 'loading' });
     try {
       const profile = await lookupPlate(plate);
-      setRevealed(true);
 
       if (!profile.found) {
         setValue('vehicle_id', null);
         setValue('driver_id', null);
         setDriverText('');
         setDriverCompany('');
+        setHasOpenedForm(true);
+        setRevealed(true);
         setLookup({ status: 'new' });
         return;
       }
 
+      setHasOpenedForm(true);
+      setRevealed(true);
       setValue('vehicle_id', profile.vehicleId ?? null);
       if (profile.driverType) setValue('driver_type', profile.driverType);
       setValue('parking_space_id', 0);
@@ -126,7 +135,26 @@ export function BookingCreate() {
     }
   };
 
+  const clearPrefill = (keepFormOpen = false) => {
+    setValue('vehicle_id', null);
+    setValue('tenant_id', null);
+    setValue('driver_id', null);
+    setDriverText('');
+    setDriverCompany('');
+    setRevealed(keepFormOpen);
+    setLookup(keepFormOpen ? { status: 'new' } : { status: 'idle' });
+  };
+
+  const resetToPlateStep = () => {
+    clearPrefill();
+    setHasOpenedForm(false);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
+    });
+  };
+
   const onPickVehicle = async (item: AutocompleteItem) => {
+    clearPrefill();
     setValue('plate_number', item.label);
     await runLookup();
   };
@@ -142,12 +170,11 @@ export function BookingCreate() {
         tenant_id: values.tenant_id ?? null,
         driver_id: values.driver_id ?? null,
         driver_name: creatingDriver ? driverText.trim() : null,
+        driver_phone: values.driver_phone || null,
         driver_company_name: hasDriver ? driverCompany || null : null,
         vehicle_id: values.vehicle_id ?? null,
         driver_type: values.driver_type,
         plate_number: values.plate_number,
-        contact_name: values.contact_name || null,
-        contact_phone: values.contact_phone || null,
         starts_at: values.starts_at,
         ends_at: values.ends_at,
         notes: values.notes || null,
@@ -178,9 +205,13 @@ export function BookingCreate() {
     <Screen title="New booking" onBack={() => router.back()}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
         <FormScrollView
+          key={hasOpenedForm ? 'booking-form' : 'booking-plate-step'}
           ref={scrollRef}
           style={styles.flex}
-          contentContainerStyle={[styles.content, !revealed && styles.contentCentered]}
+          contentContainerStyle={[styles.content, !hasOpenedForm && styles.contentCentered]}
+          onContentSizeChange={() => {
+            if (!hasOpenedForm) scrollRef.current?.scrollTo({ y: 0, animated: false });
+          }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           {topError ? <Banner title="Couldn’t create booking" message={topError} tone="danger" /> : null}
@@ -202,15 +233,26 @@ export function BookingCreate() {
                   returnKeyType="search"
                   queryKey="booking-vehicles"
                   minChars={1}
+                  noMatchesText="New vehicle"
                   value={field.value}
                   onChangeText={(value) => {
                     field.onChange(value);
-                    setValue('vehicle_id', null);
-                    if (lookup.status !== 'idle' && lookup.status !== 'loading') setLookup({ status: 'idle' });
+                    if (!value.trim()) {
+                      resetToPlateStep();
+                    } else if (hasOpenedForm) {
+                      clearPrefill(true);
+                    } else if (lookup.status !== 'idle') {
+                      clearPrefill();
+                    }
                   }}
-                  search={async (query) =>
-                    (await searchVehicles(query)).map((vehicle) => ({ id: vehicle.id, label: vehicle.plate_number }))
-                  }
+                  search={async (query) => {
+                    const vehicles = await searchVehicles(query);
+                    const normalizedQuery = query.trim().toUpperCase();
+                    if (getValues('plate_number').trim().toUpperCase() === normalizedQuery) {
+                      setVehicleMatchesQuery(vehicles.length > 0 ? normalizedQuery : null);
+                    }
+                    return vehicles.map((vehicle) => ({ id: vehicle.id, label: vehicle.plate_number }));
+                  }}
                   onSelect={onPickVehicle}
                   onSubmitEditing={runLookup}
                   error={fieldState.error?.message}
@@ -219,30 +261,22 @@ export function BookingCreate() {
               )}
             />
 
-            <Button
-              title={lookup.status === 'loading' ? 'Looking up…' : revealed ? 'Look up again' : 'Look up plate'}
-              icon="search"
-              variant={revealed ? 'secondary' : 'primary'}
-              size={revealed ? 'sm' : 'lg'}
-              loading={lookup.status === 'loading'}
-              onPress={runLookup}
-              fullWidth={!revealed}
-            />
-
             {lookup.status === 'found' ? (
               <>
-                <Banner
-                  tone="success"
-                  icon="checkCircle"
-                  title="Returning vehicle"
-                  message={[
-                    lookup.driverName || null,
-                    lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
-                    lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                />
+                {!lookup.activeTransaction ? (
+                  <Banner
+                    tone="success"
+                    icon="checkCircle"
+                    title="Returning vehicle"
+                    message={[
+                      lookup.driverName || null,
+                      lookup.tenantName ? `visiting ${lookup.tenantName}` : null,
+                      lookup.lastVisitAt ? `· last seen ${timeAgo(lookup.lastVisitAt)}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                  />
+                ) : null}
                 {lookup.activeTransaction ? (
                   <Banner
                     tone="warning"
@@ -251,12 +285,24 @@ export function BookingCreate() {
                   />
                 ) : null}
               </>
-            ) : lookup.status === 'new' ? (
+            ) : lookup.status === 'new' && revealed && !hasVehicleMatches ? (
               <Banner
                 tone="info"
                 icon="info"
                 title="New vehicle"
                 message="No previous visits for this plate. The vehicle will be resolved when the booking is fulfilled."
+              />
+            ) : null}
+
+            {!revealed ? (
+              <Button
+                title="Proceed"
+                iconRight="arrowRight"
+                size="lg"
+                loading={lookup.status === 'loading'}
+                disabled={!plateNumber.trim()}
+                onPress={runLookup}
+                fullWidth
               />
             ) : null}
             </Section>
@@ -356,20 +402,22 @@ export function BookingCreate() {
                       id: driver.id,
                       label: driver.full_name,
                       hint: driver.company_name ?? driver.phone ?? undefined,
+                      data: { phone: driver.phone, companyName: driver.company_name },
                     }))
                   }
                   onSelect={(item) => {
                     setDriverText(item.label);
-                    setDriverCompany('');
+                    setValue('driver_phone', item.data?.phone ?? '');
+                    setDriverCompany(item.data?.companyName ?? '');
                     setValue('driver_id', item.id);
                   }}
                 />
                 <Controller
                   control={control}
-                  name="contact_phone"
+                  name="driver_phone"
                   render={({ field, fieldState }) => (
                     <TextField
-                      label="Contact phone"
+                      label="Driver phone"
                       icon="phone"
                       keyboardType="phone-pad"
                       placeholder="04xx xxx xxx"

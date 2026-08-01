@@ -44,10 +44,16 @@ import { useResponsive } from '@/hooks/use-responsive';
 import { useScheme, useTheme } from '@/hooks/use-theme';
 import { formatPlate, formatTime } from '@/lib/format';
 import { statusMeta } from '@/lib/status';
+import {
+  dateValueFromPicker,
+  pickerDateFromSydneyValue,
+  sydneyNowPickerDate,
+  toSydneyDateTimeValue,
+} from '@/lib/sydney-time';
 
 // ── Date helpers ──────────────────────────────────────────────────────
 function toISODate(d: Date): string {
-  return d.toISOString().split('T')[0];
+  return dateValueFromPicker(d);
 }
 
 function addDays(d: Date, n: number): Date {
@@ -57,14 +63,15 @@ function addDays(d: Date, n: number): Date {
 }
 
 function formatNavDate(d: Date): string {
-  const todayStr = toISODate(new Date());
+  const today = sydneyNowPickerDate();
+  const todayStr = toISODate(today);
   const dStr = toISODate(d);
   const label = new Intl.DateTimeFormat(undefined, {
     weekday: 'short', month: 'short', day: 'numeric',
   }).format(d);
   if (dStr === todayStr) return `Today  ·  ${label}`;
-  if (dStr === toISODate(addDays(new Date(), 1))) return `Tomorrow  ·  ${label}`;
-  if (dStr === toISODate(addDays(new Date(), -1))) return `Yesterday  ·  ${label}`;
+  if (dStr === toISODate(addDays(today, 1))) return `Tomorrow  ·  ${label}`;
+  if (dStr === toISODate(addDays(today, -1))) return `Yesterday  ·  ${label}`;
   return label;
 }
 
@@ -122,8 +129,8 @@ function daySegments(bookings: Booking[], selectedDate: Date): BookingSegment[] 
   const segments: BookingSegment[] = [];
   for (const b of bookings) {
     if (b.status === 'cancelled' || b.status === 'expired') continue;
-    const s = new Date(b.starts_at);
-    const e = new Date(b.ends_at);
+    const s = pickerDateFromSydneyValue(b.starts_at);
+    const e = pickerDateFromSydneyValue(b.ends_at);
     if (e <= dayStart || s >= dayEnd) continue;
 
     const clippedStart = s < dayStart ? dayStart : s;
@@ -144,8 +151,8 @@ function daySegments(bookings: Booking[], selectedDate: Date): BookingSegment[] 
 /** Time range, driver, plate, tenant — in priority order, trimmed to whatever fits the block's height. */
 function bookingLines(booking: Booking): string[] {
   const lines = [
-    `${formatTime(booking.starts_at)}–${formatTime(booking.ends_at)}`,
-    booking.driver?.full_name || booking.contact_name || undefined,
+    `${formatTime(toSydneyDateTimeValue(booking.starts_at))}–${formatTime(toSydneyDateTimeValue(booking.ends_at))}`,
+    booking.driver?.full_name || undefined,
     formatPlate(booking.plate_number_raw) || undefined,
     booking.tenant?.name || undefined,
   ];
@@ -312,13 +319,13 @@ export default function BookingsScreen() {
   const [areaId, setAreaId] = useState<number | null>(null);
   const [showFilter, setShowFilter] = useState(false);
   const hasFilters = search !== '' || status !== '' || areaId !== null;
-  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState(sydneyNowPickerDate);
   const [iosDateOpen, setIosDateOpen] = useState(false);
   const [draftDate, setDraftDate] = useState(selectedDate);
   const debounced = useDebouncedValue(search);
   const dateStr = toISODate(selectedDate);
-  const isToday = dateStr === toISODate(new Date());
-  const nowHour = new Date().getHours();
+  const isToday = dateStr === toISODate(sydneyNowPickerDate());
+  const nowHour = sydneyNowPickerDate().getHours();
 
   const { data: areas = [] } = useQuery({
     queryKey: ['lookup-areas', selectedBuilding?.id],
@@ -374,9 +381,10 @@ export default function BookingsScreen() {
 
   const goToDate = (d: Date) => {
     setSelectedDate(d);
-    const isTargetToday = toISODate(d) === toISODate(new Date());
+    const sydneyNow = sydneyNowPickerDate();
+    const isTargetToday = toISODate(d) === toISODate(sydneyNow);
     const offset = isTargetToday
-      ? Math.max((new Date().getHours() - 1) * ROW_H, 0)
+      ? Math.max((sydneyNow.getHours() - 1) * ROW_H, 0)
       : 8 * ROW_H; // 8 AM for other days
     setTimeout(() => vScrollRef.current?.scrollTo({ y: offset, animated: false }), 150);
   };
@@ -396,7 +404,7 @@ export default function BookingsScreen() {
 
   // Scroll to 1 hour before now on mount
   useEffect(() => {
-    const offset = Math.max((new Date().getHours() - 1) * ROW_H, 0);
+    const offset = Math.max((sydneyNowPickerDate().getHours() - 1) * ROW_H, 0);
     const t = setTimeout(() => vScrollRef.current?.scrollTo({ y: offset, animated: false }), 150);
     return () => clearTimeout(t);
   }, []);
@@ -539,12 +547,12 @@ export default function BookingsScreen() {
             renderRow={(booking, { selected, onPress }) => {
               const meta = statusMeta(booking.status);
               const space = booking.parking_space?.space_code ?? 'Unassigned bay';
-              const contact = booking.driver?.full_name ?? booking.contact_name ?? booking.tenant?.name;
+              const contact = booking.driver?.full_name ?? booking.tenant?.name;
 
               return (
                 <ListRow
                   title={formatPlate(booking.plate_number_raw)}
-                  subtitle={`${formatTime(booking.starts_at)}–${formatTime(booking.ends_at)} · ${space}`}
+                  subtitle={`${formatTime(toSydneyDateTimeValue(booking.starts_at))}–${formatTime(toSydneyDateTimeValue(booking.ends_at))} · ${space}`}
                   meta={contact ?? undefined}
                   selected={selected}
                   onPress={onPress}

@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -6,13 +6,14 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { toApiError } from '@/api/client';
 import { lookupParkingAreas } from '@/api/lookups';
 import { checkOut, listActiveVehicles, listTransactions } from '@/api/transactions';
-import type { Transaction } from '@/api/types';
+import type { ListParams, Transaction } from '@/api/types';
 import { useSession } from '@/auth/session';
 import { ResponsiveListDetail } from '@/components/responsive-list-detail';
 import { Screen } from '@/components/screen';
 import {
   Badge,
   Button,
+  DateTimeField,
   FilterSheet,
   Icon,
   IconButton,
@@ -21,6 +22,7 @@ import {
   Segmented,
   Select,
   Text,
+  TimeField,
   ViewModeToggle,
   type ViewMode,
 } from '@/components/ui';
@@ -37,11 +39,34 @@ import { confirm } from '@/lib/confirm';
 import { durationSince, formatDuration, formatPlate } from '@/lib/format';
 import { DRIVER_TYPES } from '@/lib/options';
 import { transactionStatusMeta } from '@/lib/status';
+import { dateValueFromPicker, sydneyNowPickerDate } from '@/lib/sydney-time';
 
 const SCOPES = [
-  { value: 'active', label: 'On site' },
   { value: 'all', label: 'All' },
+  { value: 'active', label: 'On site' },
+  { value: 'completed', label: 'Completed' },
 ] as const;
+
+const DATE_MODES = [
+  { value: 'today', label: 'Today' },
+  { value: 'between', label: 'Date between' },
+] as const;
+
+type TransactionScope = (typeof SCOPES)[number]['value'];
+type DateMode = (typeof DATE_MODES)[number]['value'];
+
+function dateAndTime(value: string, time: string, endOfDay: boolean): string {
+  if (!value) return '';
+  const clock = time || (endOfDay ? '23:59' : '00:00');
+  return `${value}T${clock}:${endOfDay ? '59' : '00'}`;
+}
+
+function toLocalTime(value: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
 
 function TransactionCard({ transaction, onPress }: { transaction: Transaction; onPress: () => void }) {
   const theme = useTheme();
@@ -114,52 +139,81 @@ export default function TransactionsScreen() {
   const theme = useTheme();
   const { can } = usePermissions();
   const { isTablet } = useResponsive();
-  const [scope, setScope] = useState<'active' | 'all'>('active');
+  const [scope, setScope] = useState<TransactionScope>('all');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [showExport, setShowExport] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   const [areaId, setAreaId] = useState<number | null>(null);
   const [driverType, setDriverType] = useState('');
+  const [dateMode, setDateMode] = useState<DateMode>('today');
+  const [todayTimeFrom, setTodayTimeFrom] = useState('');
+  const [todayTimeTo, setTodayTimeTo] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const debounced = useDebouncedValue(search);
   const { selectedBuilding } = useSession();
+  const today = dateValueFromPicker(sydneyNowPickerDate());
 
-  const fetcher = scope === 'active' ? listActiveVehicles : listTransactions;
-  const baseKey = scope === 'active' ? ['active-vehicles', selectedBuilding?.id] : ['transactions', selectedBuilding?.id];
-  const list = usePaginatedList(baseKey, fetcher, {
+  const commonParams = {
     search: debounced,
     building_id: selectedBuilding?.id,
     parking_area_id: areaId || undefined,
     driver_type: driverType || undefined,
+  };
+  const paramsForScope = (targetScope: TransactionScope): ListParams => ({
+    ...commonParams,
+    status: targetScope === 'completed' ? 'completed' : undefined,
+    date_from:
+      (dateMode === 'today'
+        ? dateAndTime(today, todayTimeFrom, false)
+        : dateMode === 'between'
+          ? dateFrom
+          : '') || undefined,
+    date_to:
+      (dateMode === 'today'
+        ? dateAndTime(today, todayTimeTo, true)
+        : dateMode === 'between'
+          ? dateTo
+          : '') || undefined,
   });
-  const otherScope = scope === 'active' ? 'all' : 'active';
-  const { data: otherScopePage } = useQuery({
-    queryKey: [
-      'transaction-scope-count',
-      otherScope,
-      selectedBuilding?.id,
-      debounced,
-      areaId,
-      driverType,
-    ],
-    queryFn: () =>
-      (otherScope === 'active' ? listActiveVehicles : listTransactions)({
-        page: 1,
-        search: debounced,
-        building_id: selectedBuilding?.id,
-        parking_area_id: areaId || undefined,
-        driver_type: driverType || undefined,
-      }),
+  const fetcherForScope = (targetScope: TransactionScope) =>
+    targetScope === 'active' ? listActiveVehicles : listTransactions;
+  const exportFilters: ListParams = {
+    ...paramsForScope(scope),
+    status: scope === 'all' ? undefined : scope,
+  };
+  const fetcher = fetcherForScope(scope);
+  const baseKey = scope === 'active'
+    ? ['active-vehicles', selectedBuilding?.id]
+    : ['transactions', selectedBuilding?.id];
+  const list = usePaginatedList(
+    baseKey,
+    fetcher,
+    paramsForScope(scope),
+  );
+  const scopeCountQueries = useQueries({
+    queries: SCOPES.map((option) => ({
+      queryKey: ['transaction-scope-count', option.value, selectedBuilding?.id, paramsForScope(option.value)],
+      queryFn: () => fetcherForScope(option.value)({ page: 1, ...paramsForScope(option.value) }),
+      enabled: option.value !== scope,
+    })),
   });
-  const activeCount = scope === 'active' ? list.total : otherScopePage?.meta.total;
-  const allCount = scope === 'all' ? list.total : otherScopePage?.meta.total;
+  const countForScope = (targetScope: TransactionScope) => {
+    if (targetScope === scope) return list.total;
+    const index = SCOPES.findIndex((option) => option.value === targetScope);
+    return scopeCountQueries[index]?.data?.meta.total;
+  };
   const { data: areas = [] } = useQuery({
     queryKey: ['lookup-areas', selectedBuilding?.id],
     queryFn: () => lookupParkingAreas(selectedBuilding?.id),
   });
   const areaOptions = [{ label: 'All areas', value: 0 }, ...areas.map((area) => ({ label: area.name, value: area.id }))];
   const driverTypeOptions = [{ label: 'All driver types', value: '' }, ...DRIVER_TYPES];
-  const hasFilters = areaId !== null || driverType !== '';
+  const hasFilters =
+    areaId !== null ||
+    driverType !== '' ||
+    (dateMode === 'today' ? !!todayTimeFrom || !!todayTimeTo : !!dateFrom || !!dateTo);
   const handleCheckOut = async (transaction: Transaction) => {
     const ok = await confirm({
       title: 'Check out vehicle?',
@@ -174,6 +228,7 @@ export default function TransactionsScreen() {
         list.refetch(),
         qc.invalidateQueries({ queryKey: ['transactions'] }),
         qc.invalidateQueries({ queryKey: ['active-vehicles'] }),
+        qc.invalidateQueries({ queryKey: ['transaction-scope-count'] }),
         qc.invalidateQueries({ queryKey: ['transaction', transaction.id] }),
         qc.invalidateQueries({ queryKey: ['dashboard'] }),
       ]);
@@ -194,7 +249,7 @@ export default function TransactionsScreen() {
         <View>
           <IconButton
             name="filter"
-            accessibilityLabel="Filter transactions"
+            accessibilityLabel="Filter activity"
             onPress={() => setShowFilter(true)}
             style={[styles.filterButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
           />
@@ -206,10 +261,10 @@ export default function TransactionsScreen() {
           <Segmented
             options={SCOPES.map((option) => ({
               ...option,
-              count: option.value === 'active' ? activeCount : allCount,
+              count: countForScope(option.value),
             })) as never}
             value={scope}
-            onChange={(v) => setScope(v as 'active' | 'all')}
+            onChange={(v) => setScope(v as TransactionScope)}
             activeTone="primary"
           />
         </View>
@@ -254,8 +309,8 @@ export default function TransactionsScreen() {
           onRefresh={list.refetch}
           onEndReached={() => list.hasNextPage && list.fetchNextPage()}
           loadingMore={list.isFetchingNextPage}
-          emptyTitle={scope === 'active' ? 'No vehicles on site' : 'No transactions found'}
-          emptyDescription={debounced ? 'Try a different search.' : scope === 'active' ? 'Checked-in vehicles will appear here.' : undefined}
+          emptyTitle={scope === 'active' ? 'No vehicles on site' : scope === 'completed' ? 'No completed transactions' : 'No transactions found'}
+          emptyDescription={debounced ? 'Try a different search.' : scope === 'active' ? 'Checked-in vehicles will appear here.' : scope === 'completed' ? 'Checked-out vehicles will appear here.' : undefined}
           onOpen={(id) => router.push(`/transactions/${id}`)}
           canCheckOut={can('operations.transactions', 'update')}
           onCheckOut={handleCheckOut}
@@ -271,8 +326,8 @@ export default function TransactionsScreen() {
           onRefresh={list.refetch}
           onEndReached={() => list.hasNextPage && list.fetchNextPage()}
           loadingMore={list.isFetchingNextPage}
-          emptyTitle={scope === 'active' ? 'No vehicles on site' : 'No transactions found'}
-          emptyDescription={debounced ? 'Try a different search.' : scope === 'active' ? 'Checked-in vehicles will appear here.' : undefined}
+          emptyTitle={scope === 'active' ? 'No vehicles on site' : scope === 'completed' ? 'No completed transactions' : 'No transactions found'}
+          emptyDescription={debounced ? 'Try a different search.' : scope === 'active' ? 'Checked-in vehicles will appear here.' : scope === 'completed' ? 'Checked-out vehicles will appear here.' : undefined}
           onOpen={(id) => router.push(`/transactions/${id}`)}
           renderDetail={(id) => <TransactionDetail key={id} id={id} />}
           listHeader={toolbar}
@@ -312,13 +367,13 @@ export default function TransactionsScreen() {
       )}
 
       <TransactionExportSheet
+        key={scope}
         visible={showExport}
         onClose={() => setShowExport(false)}
-        buildingId={selectedBuilding?.id}
-        initialStatus={scope === 'active' ? 'active' : ''}
+        filters={exportFilters}
       />
 
-      <FilterSheet visible={showFilter} onClose={() => setShowFilter(false)} title="Filter transactions">
+      <FilterSheet visible={showFilter} onClose={() => setShowFilter(false)} title="Filter activity">
         <Select
           value={areaId ?? 0}
           options={areaOptions}
@@ -331,6 +386,78 @@ export default function TransactionsScreen() {
           onChange={(value) => setDriverType(value as string)}
           placeholder="All driver types"
         />
+        <View style={styles.dateModeField}>
+          <Segmented
+            options={DATE_MODES as never}
+            value={dateMode}
+            onChange={(value) => {
+              const nextMode = value as DateMode;
+              if (nextMode === 'today') {
+                setTodayTimeFrom(toLocalTime(dateFrom));
+                setTodayTimeTo(toLocalTime(dateTo));
+              } else {
+                setDateFrom(todayTimeFrom ? dateAndTime(today, todayTimeFrom, false) : '');
+                setDateTo(todayTimeTo ? dateAndTime(today, todayTimeTo, true) : '');
+              }
+              setDateMode(nextMode);
+            }}
+          />
+        </View>
+        {dateMode === 'today' ? (
+          <View style={styles.dateRow}>
+            <View style={styles.dateCol}>
+              <TimeField
+                label="From time"
+                value={todayTimeFrom}
+                onChange={(value) => {
+                  setTodayTimeFrom(value);
+                  if (value && todayTimeTo && value > todayTimeTo) setTodayTimeTo(value);
+                }}
+                placeholder="Start of day"
+                clearable
+              />
+            </View>
+            <View style={styles.dateCol}>
+              <TimeField
+                label="To time"
+                value={todayTimeTo}
+                onChange={(value) => {
+                  setTodayTimeTo(value);
+                  if (value && todayTimeFrom && value < todayTimeFrom) setTodayTimeFrom(value);
+                }}
+                placeholder="End of day"
+                clearable
+              />
+            </View>
+          </View>
+        ) : (
+          <View style={styles.dateRow}>
+            <View style={styles.dateCol}>
+              <DateTimeField
+                label="From"
+                value={dateFrom}
+                onChange={(value) => {
+                  setDateFrom(value);
+                  if (value && dateTo && value > dateTo) setDateTo(value);
+                }}
+                placeholder="Date & time"
+                clearable
+              />
+            </View>
+            <View style={styles.dateCol}>
+              <DateTimeField
+                label="To"
+                value={dateTo}
+                onChange={(value) => {
+                  setDateTo(value);
+                  if (value && dateFrom && value < dateFrom) setDateFrom(value);
+                }}
+                placeholder="Date & time"
+                clearable
+              />
+            </View>
+          </View>
+        )}
       </FilterSheet>
 
       {!isTablet && can('operations.transactions', 'create') ? (
@@ -361,6 +488,9 @@ const styles = StyleSheet.create({
   filterButton: { width: 44, height: 44, borderWidth: 1 },
   filterDot: { position: 'absolute', top: 7, right: 7, width: 7, height: 7, borderRadius: Radius.pill },
   viewRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dateModeField: { gap: Spacing.xs },
+  dateRow: { flexDirection: 'row', gap: Spacing.md },
+  dateCol: { flex: 1 },
   flex: { flex: 1 },
   transactionCard: {
     minHeight: 96,

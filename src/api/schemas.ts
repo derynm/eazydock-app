@@ -4,6 +4,8 @@
  */
 import { z } from 'zod';
 
+import { instantFromSydneyDateTimeValue } from '@/lib/sydney-time';
+
 const optionalString = (max: number) =>
   z
     .string()
@@ -66,16 +68,22 @@ export const bookingSchema = z
     vehicle_id: z.number().int().positive().nullable().optional(),
     driver_type: z.enum(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery']),
     plate_number: z.string().min(1, 'Plate number is required').max(50),
-    contact_name: optionalString(150),
-    contact_phone: optionalString(50),
+    driver_phone: optionalString(50),
     starts_at: z.string().min(1, 'Start time is required'),
     ends_at: z.string().min(1, 'End time is required'),
     notes: optionalString(2000),
   })
-  .refine((v) => new Date(v.ends_at) > new Date(v.starts_at), {
-    message: 'End must be after start',
-    path: ['ends_at'],
-  });
+  .refine(
+    (v) => {
+      const start = instantFromSydneyDateTimeValue(v.starts_at);
+      const end = instantFromSydneyDateTimeValue(v.ends_at);
+      return !!start && !!end && end > start;
+    },
+    {
+      message: 'End must be after start',
+      path: ['ends_at'],
+    },
+  );
 export type BookingForm = z.infer<typeof bookingSchema>;
 
 /* ---- Phase 2 schemas ---- */
@@ -177,8 +185,7 @@ export const checkInSchema = z.object({
   vehicle_colour: optionalString(50),
   driver_type: z.enum(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery']),
   entry_method: z.enum(['browser_camera', 'image_upload', 'manual_entry']),
-  contact_name: optionalString(150),
-  contact_phone: optionalString(50),
+  driver_phone: optionalString(50),
   comments: optionalString(2000),
 });
 export type CheckInForm = z.infer<typeof checkInSchema>;

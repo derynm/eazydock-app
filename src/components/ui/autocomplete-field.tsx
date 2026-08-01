@@ -10,7 +10,12 @@ import { Icon, type IconName } from './icon';
 import { Text } from './text';
 import { TextField } from './text-field';
 
-export type AutocompleteItem = { id: number; label: string; hint?: string };
+export type AutocompleteItem = {
+  id: number;
+  label: string;
+  hint?: string;
+  data?: Record<string, string | null | undefined>;
+};
 
 type Props = {
   label?: string;
@@ -30,6 +35,7 @@ type Props = {
   queryKey: string;
   minChars?: number;
   hideNoMatches?: boolean;
+  noMatchesText?: string;
   onEndEditing?: () => void;
   onSubmitEditing?: () => void;
   trailing?: React.ReactNode;
@@ -43,6 +49,7 @@ export function AutocompleteField({
   queryKey,
   minChars = 2,
   hideNoMatches = false,
+  noMatchesText = 'No matches',
   onEndEditing,
   onSubmitEditing,
   trailing,
@@ -86,7 +93,7 @@ export function AutocompleteField({
           ) : results.length === 0 && !hideNoMatches ? (
             <View style={styles.msg}>
               <Text variant="caption" color="textMuted">
-                No matches
+                {noMatchesText}
               </Text>
             </View>
           ) : (
