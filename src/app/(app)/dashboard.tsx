@@ -389,7 +389,7 @@ function OnSiteRow({
   const statusLabel = vehicle.status === 'active' ? 'Parked' : titleCase(vehicle.status);
   const duration =
     vehicle.parked_duration_label || formatDuration(vehicle.parked_duration_minutes);
-  const plate = formatPlate(vehicle.entry_plate_number_raw ?? vehicle.vehicle?.plate_number) || 'Unknown plate';
+  const plate = formatPlate(vehicle.vehicle?.plate_number) || 'Unknown plate';
   const bay = vehicle.parking_space?.space_code ?? vehicle.parking_area?.name ?? 'Unassigned bay';
 
   return (

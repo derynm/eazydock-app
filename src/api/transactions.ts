@@ -1,10 +1,10 @@
 import { File, Paths } from 'expo-file-system';
 
-import { instantFromSydneyDateTimeValue } from '@/lib/sydney-time';
+import { dateValueFromPicker, instantFromSydneyDateTimeValue, sydneyNowPickerDate } from '@/lib/sydney-time';
 
 import { api, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { DriverType, DriverVisitSummary, EntryMethod, Incident, ListParams, Paginator, Transaction } from './types';
+import type { DriverType, DriverVisitSummary, Incident, ListParams, Paginator, Transaction, VehicleType } from './types';
 
 function dateBoundary(value: string | number | undefined, endOfDay: boolean): number | null {
   if (!value) return null;
@@ -15,8 +15,23 @@ function dateBoundary(value: string | number | undefined, endOfDay: boolean): nu
   return instantFromSydneyDateTimeValue(normalized)?.getTime() ?? null;
 }
 
-function transactionEntryTime(transaction: Transaction): number {
-  return new Date(transaction.car_in_at ?? transaction.transaction_date).getTime();
+function transactionFilterTime(transaction: Transaction): number {
+  const value = transaction.status === 'completed' ? transaction.car_out_at : transaction.car_in_at;
+  return new Date(value ?? transaction.transaction_date).getTime();
+}
+
+function transactionDateBounds(params: ListParams): [number | null, number | null] {
+  if (params.date_from || params.date_to) {
+    return [dateBoundary(params.date_from, false), dateBoundary(params.date_to, true)];
+  }
+  const today = dateValueFromPicker(sydneyNowPickerDate());
+  return [dateBoundary(today, false), dateBoundary(today, true)];
+}
+
+function isWithinTransactionDates(transaction: Transaction, dateFrom: number | null, dateTo: number | null): boolean {
+  if (transaction.status === 'active' || transaction.status === 'overstay') return true;
+  const time = transactionFilterTime(transaction);
+  return (dateFrom === null || time >= dateFrom) && (dateTo === null || time <= dateTo);
 }
 
 function formatParkedDuration(minutes: number): string {
@@ -28,23 +43,20 @@ function formatParkedDuration(minutes: number): string {
 export async function listTransactions(params: ListParams = {}): Promise<Paginator<Transaction>> {
   if (USE_FIXTURES) {
     const q = (params.search ?? '').toLowerCase();
-    const dateFrom = dateBoundary(params.date_from, false);
-    const dateTo = dateBoundary(params.date_to, true);
+    const [dateFrom, dateTo] = transactionDateBounds(params);
     const rows = fx.transactions.filter(
       (t) => {
-        const entryTime = transactionEntryTime(t);
         return (!params.building_id || t.building_id === Number(params.building_id)) &&
           (!params.status || t.status === params.status) &&
           (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
           (!params.driver_type || t.driver_type === params.driver_type) &&
-          (dateFrom === null || entryTime >= dateFrom) &&
-          (dateTo === null || entryTime <= dateTo) &&
+          isWithinTransactionDates(t, dateFrom, dateTo) &&
           (!q ||
             t.transaction_no.toLowerCase().includes(q) ||
-            (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
+            (t.vehicle?.plate_number ?? '').toLowerCase().includes(q) ||
             (t.driver?.full_name ?? '').toLowerCase().includes(q));
       },
-    );
+    ).sort((a, b) => transactionFilterTime(b) - transactionFilterTime(a));
     return fx.delay(fx.paginate(rows, Number(params.page) || 1));
   }
   try {
@@ -58,21 +70,18 @@ export async function listTransactions(params: ListParams = {}): Promise<Paginat
 export async function listActiveVehicles(params: ListParams = {}): Promise<Paginator<Transaction>> {
   if (USE_FIXTURES) {
     const q = (params.search ?? '').toLowerCase();
-    const dateFrom = dateBoundary(params.date_from, false);
-    const dateTo = dateBoundary(params.date_to, true);
+    const [dateFrom, dateTo] = transactionDateBounds(params);
     const rows = fx.transactions.filter(
       (t) => {
-        const entryTime = transactionEntryTime(t);
         return (
           (!params.building_id || t.building_id === Number(params.building_id)) &&
           (t.status === 'active' || t.status === 'overstay') &&
           (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
           (!params.driver_type || t.driver_type === params.driver_type) &&
-          (dateFrom === null || entryTime >= dateFrom) &&
-          (dateTo === null || entryTime <= dateTo) &&
+          isWithinTransactionDates(t, dateFrom, dateTo) &&
           (!q ||
             t.transaction_no.toLowerCase().includes(q) ||
-            (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
+            (t.vehicle?.plate_number ?? '').toLowerCase().includes(q) ||
             (t.driver?.full_name ?? '').toLowerCase().includes(q))
         );
       },
@@ -194,32 +203,14 @@ export type CheckInInput = {
   vehicle_make?: string | null;
   vehicle_model?: string | null;
   vehicle_colour?: string | null;
-  vehicle_type?: string | null;
+  vehicle_type?: VehicleType | null;
   driver_type: DriverType;
-  entry_method: EntryMethod;
   comments?: string | null;
-  imageUri?: string | null;
 };
-
-function buildCheckInForm(input: CheckInInput): FormData {
-  const form = new FormData();
-  Object.entries(input).forEach(([key, value]) => {
-    if (key === 'imageUri' || value == null) return;
-    form.append(key, String(value));
-  });
-  if (input.imageUri) {
-    form.append('image', {
-      uri: input.imageUri,
-      name: 'check-in.jpg',
-      type: 'image/jpeg',
-    } as unknown as Blob);
-  }
-  return form;
-}
 
 function buildCheckInJson(input: CheckInInput): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(input).filter(([key, value]) => key !== 'imageUri' && value != null),
+    Object.entries(input).filter(([, value]) => value != null),
   );
 }
 
@@ -264,6 +255,30 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
     }
 
     const resolvedDriver = driverId ? fx.drivers.find((driver) => driver.id === driverId) : undefined;
+    let resolvedVehicle = input.vehicle_id
+      ? fx.vehicles.find((vehicle) => vehicle.id === input.vehicle_id)
+      : undefined;
+    if (!resolvedVehicle) {
+      const plateNumber = input.plate_number.trim().toUpperCase();
+      resolvedVehicle = {
+        id: fx.nextId(fx.vehicles),
+        plate_number: plateNumber,
+        plate_number_normalized: plateNumber.replace(/[^A-Z0-9]/g, ''),
+        plate_state: null,
+        plate_country: null,
+        status: 'active',
+        notes: null,
+        car_id: null,
+        vehicle_type: input.vehicle_type ?? 'other',
+        make: input.vehicle_make ?? null,
+        model: input.vehicle_model ?? null,
+        colour: input.vehicle_colour ?? null,
+        created_at: nowIso,
+        updated_at: nowIso,
+        drivers: [],
+      };
+      fx.vehicles.unshift(resolvedVehicle);
+    }
     const txn: Transaction = {
       id: fx.nextId(fx.transactions),
       transaction_no: `TXN-${10_420 + fx.transactions.length + 1}`,
@@ -274,26 +289,20 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
       parking_space_id: space.id,
       tenant_id: input.tenant_id ?? null,
       driver_id: driverId,
-      vehicle_id: input.vehicle_id ?? null,
+      vehicle_id: resolvedVehicle.id,
       transaction_date: nowIso,
       car_in_at: nowIso,
       car_out_at: null,
       duration_minutes: null,
       parked_duration_minutes: 0,
       parked_duration_label: '0m',
-      entry_method: input.entry_method,
-      exit_method: null,
-      entry_plate_number_raw: input.plate_number.toUpperCase(),
-      exit_plate_number_raw: null,
       comments: input.comments ?? null,
-      vehicle_snapshot: { plate_number: input.plate_number.toUpperCase(), make: input.vehicle_make ?? '', model: input.vehicle_model ?? '' },
-      driver_snapshot: driverName ? { full_name: driverName } : null,
       tenant_snapshot: null,
       created_at: nowIso,
       building: { id: input.building_id, name: fx.buildings.find((b) => b.id === input.building_id)?.name ?? '' },
       parking_area: { id: area.id, name: area.name },
       parking_space: { id: space.id, space_code: space.space_code },
-      vehicle: { id: input.vehicle_id ?? 0, plate_number: input.plate_number.toUpperCase(), plate_state: null },
+      vehicle: { id: resolvedVehicle.id, plate_number: resolvedVehicle.plate_number, plate_state: resolvedVehicle.plate_state },
       driver: driverId && driverName
         ? { id: driverId, full_name: driverName, phone: resolvedDriver?.phone, company_name: resolvedDriver?.company_name }
         : undefined,
@@ -303,19 +312,14 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
     return fx.delay(txn);
   }
   try {
-    const request = input.imageUri
-      ? api.post<{ data: Transaction }>('/admin/transactions/check-in', buildCheckInForm(input), {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-      : api.post<{ data: Transaction }>('/admin/transactions/check-in', buildCheckInJson(input));
-    const { data } = await request;
+    const { data } = await api.post<{ data: Transaction }>('/admin/transactions/check-in', buildCheckInJson(input));
     return data.data;
   } catch (e) {
     throw toApiError(e);
   }
 }
 
-export async function checkOut(id: number, exitMethod: string, comments?: string): Promise<Transaction> {
+export async function checkOut(id: number, comments?: string): Promise<Transaction> {
   if (USE_FIXTURES) {
     const idx = fx.transactions.findIndex((t) => t.id === id);
     if (idx < 0) throw toApiError({ response: { status: 404, data: { message: 'Transaction not found' } } });
@@ -329,19 +333,16 @@ export async function checkOut(id: number, exitMethod: string, comments?: string
       duration_minutes: dur,
       parked_duration_minutes: dur,
       parked_duration_label: formatParkedDuration(dur),
-      exit_method: exitMethod,
       comments: comments ?? t.comments,
       events: [...(t.events ?? []), { id: (t.events?.length ?? 0) + 1, type: 'check_out', description: 'Checked out', created_at: nowIso }],
     };
     return fx.delay(fx.transactions[idx]);
   }
   try {
-    const form = new FormData();
-    form.append('exit_method', exitMethod);
-    if (comments) form.append('comments', comments);
-    const { data } = await api.post<{ data: Transaction }>(`/admin/transactions/${id}/check-out`, form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const { data } = await api.post<{ data: Transaction }>(
+      `/admin/transactions/${id}/check-out`,
+      comments ? { comments } : {},
+    );
     return data.data;
   } catch (e) {
     throw toApiError(e);
@@ -494,8 +495,8 @@ function transactionsCsv(rows: Transaction[]): string {
     [
       t.transaction_no,
       t.status,
-      t.entry_plate_number_raw,
-      t.driver?.full_name ?? t.driver_snapshot?.full_name ?? '',
+      t.vehicle?.plate_number ?? '',
+      t.driver?.full_name ?? '',
       t.parking_area?.name ?? '',
       t.parking_space?.space_code ?? '',
       t.car_in_at ?? '',
@@ -520,21 +521,18 @@ export async function exportTransactions(format: ExportFormat, params: ListParam
 
   if (USE_FIXTURES) {
     const q = (params.search ?? '').toString().toLowerCase();
-    const dateFrom = dateBoundary(params.date_from, false);
-    const dateTo = dateBoundary(params.date_to, true);
+    const [dateFrom, dateTo] = transactionDateBounds(params);
     const rows = fx.transactions.filter(
       (t) => {
-        const entryTime = transactionEntryTime(t);
         return (
           (!params.building_id || t.building_id === Number(params.building_id)) &&
           (!params.status || t.status === params.status) &&
           (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
           (!params.driver_type || t.driver_type === params.driver_type) &&
-          (dateFrom === null || entryTime >= dateFrom) &&
-          (dateTo === null || entryTime <= dateTo) &&
+          isWithinTransactionDates(t, dateFrom, dateTo) &&
           (!q ||
             t.transaction_no.toLowerCase().includes(q) ||
-            (t.entry_plate_number_raw ?? '').toLowerCase().includes(q) ||
+            (t.vehicle?.plate_number ?? '').toLowerCase().includes(q) ||
             (t.driver?.full_name ?? '').toLowerCase().includes(q))
         );
       },

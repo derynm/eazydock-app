@@ -32,7 +32,6 @@ const EMPTY: CheckInForm = {
   vehicle_model: '',
   vehicle_colour: '',
   driver_type: 'delivery',
-  entry_method: 'manual_entry',
   driver_phone: '',
   comments: '',
 };
@@ -187,7 +186,6 @@ export default function CheckInScreen() {
         vehicle_colour: values.vehicle_colour || null,
         vehicle_type: vehicleType ?? null,
         driver_type: values.driver_type,
-        entry_method: values.entry_method,
         comments: values.comments || null,
       };
       return checkIn(input);

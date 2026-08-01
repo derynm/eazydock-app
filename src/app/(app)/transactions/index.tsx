@@ -39,7 +39,7 @@ import { confirm } from '@/lib/confirm';
 import { durationSince, formatDuration, formatPlate } from '@/lib/format';
 import { DRIVER_TYPES } from '@/lib/options';
 import { transactionStatusMeta } from '@/lib/status';
-import { dateValueFromPicker, sydneyNowPickerDate } from '@/lib/sydney-time';
+import { dateValueFromPicker, instantFromSydneyDateTimeValue, sydneyNowPickerDate } from '@/lib/sydney-time';
 
 const SCOPES = [
   { value: 'all', label: 'All' },
@@ -58,7 +58,7 @@ type DateMode = (typeof DATE_MODES)[number]['value'];
 function dateAndTime(value: string, time: string, endOfDay: boolean): string {
   if (!value) return '';
   const clock = time || (endOfDay ? '23:59' : '00:00');
-  return `${value}T${clock}:${endOfDay ? '59' : '00'}`;
+  return instantFromSydneyDateTimeValue(`${value}T${clock}:${endOfDay ? '59' : '00'}`)?.toISOString() ?? '';
 }
 
 function toLocalTime(value: string): string {
@@ -75,12 +75,13 @@ function TransactionCard({ transaction, onPress }: { transaction: Transaction; o
   const location = [transaction.parking_area?.name, transaction.parking_space?.space_code]
     .filter(Boolean)
     .join('  ·  ');
-  const driver = transaction.driver?.full_name ?? transaction.driver_snapshot?.full_name;
+  const driver = transaction.driver?.full_name ?? 'Unknown driver';
+  const plate = formatPlate(transaction.vehicle?.plate_number) || 'Unknown plate';
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Open transaction for ${formatPlate(transaction.entry_plate_number_raw)}`}
+      accessibilityLabel={`Open transaction for ${plate}`}
       onPress={onPress}
       style={({ pressed }) => [
         styles.transactionCard,
@@ -100,7 +101,7 @@ function TransactionCard({ transaction, onPress }: { transaction: Transaction; o
       </View>
       <View style={styles.cardBody}>
         <Text variant="bodyStrong" numberOfLines={1}>
-          {formatPlate(transaction.entry_plate_number_raw)}
+          {plate}
         </Text>
         {location ? (
           <View style={styles.cardMetaLine}>
@@ -168,13 +169,13 @@ export default function TransactionsScreen() {
       (dateMode === 'today'
         ? dateAndTime(today, todayTimeFrom, false)
         : dateMode === 'between'
-          ? dateFrom
+          ? dateAndTime(dateFrom, '', false)
           : '') || undefined,
     date_to:
       (dateMode === 'today'
         ? dateAndTime(today, todayTimeTo, true)
         : dateMode === 'between'
-          ? dateTo
+          ? dateAndTime(dateTo, '', true)
           : '') || undefined,
   });
   const fetcherForScope = (targetScope: TransactionScope) =>
@@ -217,13 +218,13 @@ export default function TransactionsScreen() {
   const handleCheckOut = async (transaction: Transaction) => {
     const ok = await confirm({
       title: 'Check out vehicle?',
-      message: formatPlate(transaction.entry_plate_number_raw),
+      message: formatPlate(transaction.vehicle?.plate_number) || 'Unknown plate',
       confirmLabel: 'Check out',
     });
     if (!ok) return;
 
     try {
-      await checkOut(transaction.id, 'manual_entry');
+      await checkOut(transaction.id);
       await Promise.all([
         list.refetch(),
         qc.invalidateQueries({ queryKey: ['transactions'] }),
@@ -342,9 +343,9 @@ export default function TransactionsScreen() {
 
             return (
               <ListRow
-                title={formatPlate(t.entry_plate_number_raw)}
+                title={formatPlate(t.vehicle?.plate_number) || 'Unknown plate'}
                 subtitle={`${t.parking_area?.name ?? ''}${t.parking_space ? ` · ${t.parking_space.space_code}` : ''}`}
-                meta={t.driver?.full_name ?? t.driver_snapshot?.full_name ?? undefined}
+                meta={t.driver?.full_name ?? 'Unknown driver'}
                 selected={selected}
                 onPress={onPress}
                 leading={

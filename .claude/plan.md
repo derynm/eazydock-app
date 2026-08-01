@@ -430,7 +430,7 @@ Duplicate (same driver+vehicle) → `422 errors.driver_id`. **Resource:**
 
 | Method · Path | Action | Notes |
 |---|---|---|
-| `GET /admin/transactions?search=&status=&building_id=&tenant_id=&parking_area_id=&date_from=&date_to=&page=` | view | all transactions; `date_from`/`date_to` are `YYYY-MM-DD`, inclusive, filter on the **entry date** (`car_in_at`) |
+| `GET /admin/transactions?search=&status=&building_id=&tenant_id=&parking_area_id=&date_from=&date_to=&page=` | view | defaults to the current Sydney day; explicit UTC ranges are inclusive; completed rows filter/order by `car_out_at`, other dated rows by `car_in_at`, and active rows remain included outside the range |
 | `GET /admin/transactions/active-vehicles?search=&parking_area_id=&driver_type=&page=` | view | active only (area-restricted for non-admins) |
 | `GET /admin/transactions/vehicle-search?q=` | view | type-ahead: `{ vehicles: [{ id, car_id, plate_number }] }` (q ≥ 1) |
 | `GET /admin/transactions/driver-search?q=` | view | `{ drivers: [{ id, full_name, phone, email, company_name }] }` |
@@ -438,8 +438,8 @@ Duplicate (same driver+vehicle) → `422 errors.driver_id`. **Resource:**
 | `GET /admin/transactions/car-search?q=` | view | distinct cars: `{ cars: [{ id, vehicle_type, make, model, colour }] }` (fills check-in car fields) |
 | `GET /admin/transactions/plate-lookup?plate=` | view | **full-plate prefill for check-in** (shape ↓) |
 | `GET /admin/transactions/{id}` | view | includes relations + `events[]` |
-| `POST /admin/transactions/check-in` | create | **`multipart/form-data`** (optional `image`) → **201** |
-| `POST /admin/transactions/{id}/check-out` | update | multipart (optional `image`) → 200 |
+| `POST /admin/transactions/check-in` | create | JSON → **201** |
+| `POST /admin/transactions/{id}/check-out` | update | `{ comments? }` (an empty JSON object is valid) → 200 |
 | `POST /admin/transactions/{id}/change-space` | update | `{ parking_space_id*, comments? }` |
 | `POST /admin/transactions/{id}/cancel` | delete | — |
 
@@ -447,9 +447,7 @@ Duplicate (same driver+vehicle) → `422 errors.driver_id`. **Resource:**
 (omit → server auto-assigns next available bay) · `tenant_id` · `vehicle_id`
 (existing) · `plate_number`* · `vehicle_make/model/colour` · `vehicle_type` (enum)
 · `driver_type`* (`building_owner|tenant|contractor|visitor|delivery`)
-· `entry_method`* (`browser_camera|image_upload|manual_entry`) · `contact_name`
-(max 150) · `contact_phone` (max 50) · `comments` · `image` (jpg/jpeg/png/webp,
-≤10 MB). **Driver (optional):** send `driver_id` for an existing driver, **or**
+· `comments`. **Driver (optional):** send `driver_id` for an existing driver, **or**
 `driver_name` (+ optional `driver_phone`, `driver_company_name`) to
 **auto-create and link the driver** during check-in; send neither for no
 driver. `driver_company_name` can be typed freely or picked from
@@ -461,7 +459,8 @@ values never wipe what's already stored), so re-typing a driver's company at
 check-in updates their one canonical record in place rather than creating a
 duplicate driver. Vehicle already active → `422`; banned → `422`; area full →
 `422 errors.parking_space_id`.
-**check-out body:** `exit_method`* (enum) · `plate_number` · `comments` · `image`.
+**check-out body:** optional `comments` only. A camera/OCR scanner may fill the
+check-in `plate_number`, but capture images and scan metadata are never sent or stored.
 
 **`plate-lookup` — the check-in prefill flow.** App sends the full plate; if the
 vehicle is known it returns its details + history-based prefill + any active
@@ -473,25 +472,20 @@ session; if unknown, everything is `null` and the app fills the form manually.
   "vehicle": { "id": 5, "car_id": 9, "plate_number": "ABC-123", "plate_state": "NSW",
                "status": "active", "vehicle_type": "van", "make": "Ford", "model": "Transit", "colour": "White" },
   "active_transaction": { "id": 12, "transaction_no": "TXN-…", "car_in_at": "…",
-                           "parking_space_id": 3, "driver_type": "contractor", "parking_space": {…},
-                           "contact_name": "Jane Doe", "contact_phone": "…" },
+                           "parking_space_id": 3, "driver_type": "contractor", "parking_space": {…} },
   "prefill": {                                  // from the vehicle's last visit
     "suggested_driver": { "id": 7, "full_name": "Jane Doe", "phone": "…", "company_name": "…" },
     "last_driver_type": "contractor",
     "last_tenant_id": 4,
-    "last_tenant": { "id": 4, "name": "Acme Co" },  // who they last visited
-    "last_contact_name": "Jane Doe",
-    "last_contact_phone": "…"
+    "last_tenant": { "id": 4, "name": "Acme Co" }  // who they last visited
   },
   "recent_visits": [ { "id", "transaction_no", "status", "driver_type", "driver_name",
-                       "tenant_id", "tenant_name", "car_in_at", "car_out_at", "duration_minutes",
-                       "contact_name", "contact_phone" } ]
+                       "tenant_id", "tenant_name", "car_in_at", "car_out_at", "duration_minutes" } ]
 }
 ```
 > Check-in screen flow: type plate → on full entry call `plate-lookup` → if
 > `vehicle` non-null, prefill `vehicle_*`, `driver_id` (= `suggested_driver.id`),
-> `driver_type` (= `last_driver_type`), `tenant_id` (= `last_tenant_id`),
-> `contact_name`/`contact_phone` (= `last_contact_name`/`last_contact_phone`) —
+> `driver_type` (= `last_driver_type`) and `tenant_id` (= `last_tenant_id`) —
 > all editable; if `active_transaction` non-null, warn "already inside / check
 > out instead". If `vehicle` is null, leave the form blank for manual entry. The
 > driver field stays editable either way: keep the `suggested_driver` (sends
@@ -502,10 +496,10 @@ session; if unknown, everything is `null` and the app fills the form manually.
 > (see the driver-record note in §6A Transactions), it does not create a
 > duplicate.
 
-**Resource:** `{ id, transaction_no, status, driver_type, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, transaction_date, car_in_at, car_out_at, duration_minutes, entry_method, exit_method, entry_plate_number_raw, exit_plate_number_raw, comments, vehicle_snapshot, driver_snapshot, tenant_snapshot, contact_name, contact_phone, created_at, + (on show) building, parking_area, parking_space, tenant, driver, vehicle, events[] }`.
-`contact_name`/`contact_phone` are set from the check-in body directly, or copied from the
-booking when a booking is fulfilled into a transaction (§ Bookings below) — they are
-plain fields on the transaction, not part of any snapshot.
+**Resource:** `{ id, transaction_no, status, driver_type, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, transaction_date, car_in_at, car_out_at, duration_minutes, comments, tenant_snapshot, created_at, + building, parking_area, parking_space, tenant, driver, vehicle, events[] }`.
+Driver name/phone are read from `driver`; the plate is read from `vehicle`, including
+soft-deleted vehicles on historical transactions. Transaction responses do not carry
+copied driver/vehicle fields or plate-capture fields.
 
 ### Bookings  (`operations.bookings`)
 
@@ -517,7 +511,7 @@ plain fields on the transaction, not part of any snapshot.
 | `POST /admin/bookings` | create | booking fields ↓ → 201 |
 | `GET /admin/bookings/{id}` | view | — |
 | `PUT /admin/bookings/{id}` | update | booking fields ↓ (only `pending`/`confirmed`, else 422) |
-| `POST /admin/bookings/{id}/fulfil` | update | `{ entry_method* (enum), comments? }` → **201** (returns the created **transaction**) |
+| `POST /admin/bookings/{id}/fulfil` | update | `{ comments? }` → **201** (returns the created **transaction**) |
 | `POST /admin/bookings/{id}/cancel` | update | — |
 | `DELETE /admin/bookings/{id}` | delete | — |
 
@@ -536,7 +530,7 @@ just spaces that happen to have a booking. Each row carries a derived
 
 `?status=available|booked|occupied` filters the returned rows to just that
 status. `?search=` still narrows which bookings appear in each row's
-`bookings[]` array (matching `booking_no`/plate/`contact_name`), but does
+`bookings[]` array (matching `booking_no`/plate/linked driver name), but does
 **not** hide a space or change its computed `status` — a space's `status` is
 independent of the search term.
 ```jsonc
@@ -552,8 +546,8 @@ independent of the search term.
 
 **Booking fields / rules:** `building_id`* · `parking_area_id`* ·
 `parking_space_id`* (operational) · `tenant_id` · `vehicle_id` · `driver_type`*
-(enum) · `plate_number`* (max 50) · `contact_name` (150) · `contact_phone` (50) ·
-`starts_at`* (date) · `ends_at`* (date, after `starts_at`) · `notes`.
+(enum) · `plate_number`* (max 50) · `starts_at`* (date) · `ends_at`* (date,
+after `starts_at`) · `notes`.
 **Driver (optional):** send `driver_id` for an existing driver, or `driver_name`
 (max 150) with optional `driver_phone` (max 50) and `driver_company_name`
 (max 150) to auto-create a company-scoped driver; send neither for no driver.
@@ -569,11 +563,12 @@ also rejected:** if `starts_at` is now or in the past *and* the space's live
 immediately."). Future-dated bookings are **not** checked against current
 occupancy (only against other bookings' time windows) — the space may well be
 vacated by then; occupancy is re-checked for real at fulfil time.
-**Resource:** `{ id, booking_no, status, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, driver_type, plate_number_raw, contact_name, contact_phone, starts_at, ends_at, notes, parking_transaction_id, created_at, + building, parking_area, parking_space, tenant, driver? }`.
+**Resource:** `{ id, booking_no, status, building_id, parking_area_id, parking_space_id, tenant_id, driver_id, vehicle_id, driver_type, plate_number_raw, starts_at, ends_at, notes, parking_transaction_id, created_at, + building, parking_area, parking_space, tenant, driver? }`.
 `driver` (when linked): `{ id, full_name, phone, email, company_name }`.
-**On fulfil:** the booking's `contact_name`/`contact_phone` are copied onto the
-resulting transaction (not just left on the booking), so check-out/reporting
-screens reading the transaction still have them.
+Booking detail reads name/phone from the linked `driver`; `plate_number_raw`
+intentionally remains the booking's own plate until fulfilment. The resulting
+transaction reads current driver details and plate data from its `driver` and
+`vehicle` relations.
 
 ---
 

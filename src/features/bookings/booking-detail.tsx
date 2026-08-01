@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { toApiError } from '@/api/client';
 import { cancelBooking, deleteBooking, fulfilBooking, getBooking } from '@/api/bookings';
-import { Badge, Button, Card, Divider, EmptyState, KeyValue, Section, Select, Skeleton, Text, TextField } from '@/components/ui';
+import { Badge, Button, Card, Divider, EmptyState, KeyValue, Section, Skeleton, Text, TextField } from '@/components/ui';
 import { FormSheet } from '@/components/form-sheet';
 import { Radius, Spacing } from '@/constants/theme';
 import { BookingForm } from '@/features/bookings/booking-form';
@@ -13,7 +13,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 import { formatDateTime, formatPlate, titleCase } from '@/lib/format';
 import { toSydneyDateTimeValue } from '@/lib/sydney-time';
-import { ENTRY_METHODS } from '@/lib/options';
 import { statusMeta } from '@/lib/status';
 
 export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () => void }) {
@@ -28,6 +27,9 @@ export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () =>
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['booking', id] });
     qc.invalidateQueries({ queryKey: ['bookings'] });
+    qc.invalidateQueries({ queryKey: ['transactions'] });
+    qc.invalidateQueries({ queryKey: ['active-vehicles'] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
     onChanged?.();
   };
 
@@ -169,12 +171,11 @@ export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () =>
 }
 
 function FulfilModal({ visible, bookingId, onClose, onDone }: { visible: boolean; bookingId: number; onClose: () => void; onDone: () => void }) {
-  const [method, setMethod] = useState('manual_entry');
   const [comments, setComments] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => fulfilBooking(bookingId, method, comments || undefined),
+    mutationFn: () => fulfilBooking(bookingId, comments || undefined),
     onSuccess: () => {
       onClose();
       onDone();
@@ -187,7 +188,6 @@ function FulfilModal({ visible, bookingId, onClose, onDone }: { visible: boolean
 
   return (
     <FormSheet visible={visible} onClose={onClose} title="Fulfil booking" subtitle="Creates a check-in transaction" onSubmit={() => mutation.mutate()} submitting={mutation.isPending} submitLabel="Fulfil" error={error}>
-      <Select label="Entry method" required value={method} options={ENTRY_METHODS} onChange={setMethod} />
       <TextField label="Comments" placeholder="Optional" multiline value={comments} onChangeText={setComments} style={{ minHeight: 80, textAlignVertical: 'top' }} />
     </FormSheet>
   );

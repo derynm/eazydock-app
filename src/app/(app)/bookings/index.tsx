@@ -547,13 +547,13 @@ export default function BookingsScreen() {
             renderRow={(booking, { selected, onPress }) => {
               const meta = statusMeta(booking.status);
               const space = booking.parking_space?.space_code ?? 'Unassigned bay';
-              const contact = booking.driver?.full_name ?? booking.tenant?.name;
+              const driverOrTenant = booking.driver?.full_name ?? booking.tenant?.name;
 
               return (
                 <ListRow
                   title={formatPlate(booking.plate_number_raw)}
                   subtitle={`${formatTime(toSydneyDateTimeValue(booking.starts_at))}–${formatTime(toSydneyDateTimeValue(booking.ends_at))} · ${space}`}
-                  meta={contact ?? undefined}
+                  meta={driverOrTenant ?? undefined}
                   selected={selected}
                   onPress={onPress}
                   leading={
@@ -577,7 +577,7 @@ export default function BookingsScreen() {
       </View>
 
       <FilterSheet visible={showFilter} onClose={() => setShowFilter(false)} title="Filter bookings">
-        <SearchBar value={search} onChangeText={setSearch} placeholder="Search plate, ref, contact…" />
+        <SearchBar value={search} onChangeText={setSearch} placeholder="Search plate, ref, driver…" />
         <Select value={areaId ?? 0} options={areaOptions} onChange={(v) => setAreaId((v as number) || null)} placeholder="All areas" />
         <Segmented
           scrollable

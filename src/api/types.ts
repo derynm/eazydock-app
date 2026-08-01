@@ -44,7 +44,6 @@ export type TenantType =
 export type DriverType = 'building_owner' | 'tenant' | 'contractor' | 'visitor' | 'delivery';
 export type TransactionStatus = 'active' | 'completed' | 'cancelled' | 'overstay';
 export type BookingStatus = 'pending' | 'confirmed' | 'fulfilled' | 'cancelled' | 'expired';
-export type EntryMethod = 'browser_camera' | 'image_upload' | 'manual_entry';
 
 /* ---- Resources ---- */
 export type Driver = {
@@ -137,13 +136,7 @@ export type Transaction = {
   duration_minutes: number | null;
   parked_duration_minutes: number;
   parked_duration_label: string;
-  entry_method: EntryMethod | null;
-  exit_method: string | null;
-  entry_plate_number_raw: string | null;
-  exit_plate_number_raw: string | null;
   comments: string | null;
-  vehicle_snapshot: Record<string, string | null> | null;
-  driver_snapshot?: Record<string, string | null> | null;
   tenant_snapshot: Record<string, string | null> | null;
   created_at: string;
   // present on show
@@ -253,7 +246,6 @@ export type DashboardActiveVehicle = {
   duration_minutes: number | null;
   parked_duration_minutes: number;
   parked_duration_label: string;
-  entry_plate_number_raw: string | null;
   parking_area: { id: number; name: string } | null;
   parking_space: { id: number; space_code: string } | null;
   vehicle: { id: number; plate_number: string; plate_state: string | null } | null;

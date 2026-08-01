@@ -184,7 +184,6 @@ export const checkInSchema = z.object({
   vehicle_model: optionalString(100),
   vehicle_colour: optionalString(50),
   driver_type: z.enum(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery']),
-  entry_method: z.enum(['browser_camera', 'image_upload', 'manual_entry']),
   driver_phone: optionalString(50),
   comments: optionalString(2000),
 });

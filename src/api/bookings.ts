@@ -1,7 +1,7 @@
 import { api, toApiError, USE_FIXTURES } from './client';
 import { toSydneyDateTimeValue } from '@/lib/sydney-time';
 import * as fx from './fixtures';
-import type { Booking, BookingsBySpaceGroup, BookingsBySpaceResponse, Building, DriverType, ListParams, Paginator, ParkingArea, ParkingSpace, SpaceStatus, Tenant } from './types';
+import type { Booking, BookingsBySpaceGroup, BookingsBySpaceResponse, Building, DriverType, ListParams, Paginator, ParkingArea, ParkingSpace, SpaceStatus, Tenant, Transaction } from './types';
 
 export type BookingInput = {
   building_id: number;
@@ -269,15 +269,76 @@ export async function updateBooking(id: number, input: BookingInput): Promise<Bo
   }
 }
 
-export async function fulfilBooking(id: number, entryMethod: string, comments?: string): Promise<void> {
+export async function fulfilBooking(id: number, comments?: string): Promise<Transaction> {
   if (USE_FIXTURES) {
     const idx = fx.bookings.findIndex((b) => b.id === id);
-    if (idx >= 0) fx.bookings[idx] = { ...fx.bookings[idx], status: 'fulfilled', parking_transaction_id: 1 };
-    await fx.delay(null);
-    return;
+    if (idx < 0) throw toApiError({ response: { status: 404, data: { message: 'Booking not found' } } });
+    const booking = fx.bookings[idx];
+    const nowIso = new Date().toISOString();
+    const normalizedPlate = booking.plate_number_raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    let vehicle = fx.vehicles.find((candidate) =>
+      candidate.id === booking.vehicle_id || candidate.plate_number_normalized === normalizedPlate,
+    );
+    if (!vehicle) {
+      vehicle = {
+        id: fx.nextId(fx.vehicles),
+        plate_number: booking.plate_number_raw.toUpperCase(),
+        plate_number_normalized: normalizedPlate,
+        plate_state: null,
+        plate_country: null,
+        status: 'active',
+        notes: null,
+        car_id: null,
+        vehicle_type: 'other',
+        make: null,
+        model: null,
+        colour: null,
+        created_at: nowIso,
+        updated_at: nowIso,
+        drivers: [],
+      };
+      fx.vehicles.unshift(vehicle);
+    }
+    const driver = booking.driver_id
+      ? fx.drivers.find((candidate) => candidate.id === booking.driver_id)
+      : undefined;
+    const transaction: Transaction = {
+      id: fx.nextId(fx.transactions),
+      transaction_no: `TXN-${10_420 + fx.transactions.length + 1}`,
+      status: 'active',
+      driver_type: booking.driver_type,
+      building_id: booking.building_id,
+      parking_area_id: booking.parking_area_id,
+      parking_space_id: booking.parking_space_id,
+      tenant_id: booking.tenant_id,
+      driver_id: booking.driver_id,
+      vehicle_id: vehicle.id,
+      transaction_date: nowIso,
+      car_in_at: nowIso,
+      car_out_at: null,
+      duration_minutes: null,
+      parked_duration_minutes: 0,
+      parked_duration_label: '0m',
+      comments: comments ?? null,
+      tenant_snapshot: booking.tenant ? { name: booking.tenant.name } : null,
+      created_at: nowIso,
+      building: booking.building,
+      parking_area: booking.parking_area,
+      parking_space: booking.parking_space,
+      tenant: booking.tenant,
+      driver: driver
+        ? { id: driver.id, full_name: driver.full_name, phone: driver.phone, email: driver.email, company_name: driver.company_name }
+        : undefined,
+      vehicle: { id: vehicle.id, plate_number: vehicle.plate_number, plate_state: vehicle.plate_state },
+      events: [{ id: 1, type: 'check_in', description: 'Booking fulfilled', created_at: nowIso }],
+    };
+    fx.transactions.unshift(transaction);
+    fx.bookings[idx] = { ...booking, status: 'fulfilled', parking_transaction_id: transaction.id, vehicle_id: vehicle.id };
+    return fx.delay(transaction);
   }
   try {
-    await api.post(`/admin/bookings/${id}/fulfil`, { entry_method: entryMethod, comments });
+    const { data } = await api.post<{ data: Transaction }>(`/admin/bookings/${id}/fulfil`, comments ? { comments } : {});
+    return data.data;
   } catch (e) {
     throw toApiError(e);
   }

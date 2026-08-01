@@ -195,7 +195,7 @@ function TransactionTableRow({
   const theme = useTheme();
   const meta = transactionStatusMeta(transaction.status);
   const active = transaction.status === 'active' || transaction.status === 'overstay';
-  const driver = transaction.driver?.full_name ?? transaction.driver_snapshot?.full_name ?? '—';
+  const driver = transaction.driver?.full_name ?? 'Unknown driver';
   const location =
     [transaction.parking_area?.name, transaction.parking_space?.space_code].filter(Boolean).join(' · ') || '—';
 
@@ -209,7 +209,7 @@ function TransactionTableRow({
         state.pressed && { backgroundColor: theme.surfaceSunken },
       ]}>
       <Cell width={135} value={transaction.transaction_no} strong />
-      <Cell width={115} value={formatPlate(transaction.entry_plate_number_raw)} strong />
+      <Cell width={115} value={formatPlate(transaction.vehicle?.plate_number) || 'Unknown plate'} strong />
       <Cell width={180} value={driver} />
       <Cell width={190} value={location} />
       <View style={[styles.cell, { width: 120 }]}>

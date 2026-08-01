@@ -87,7 +87,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
     minutesBetween(txn.car_in_at, isActive ? null : txn.car_out_at) ??
     txn.duration_minutes;
   const duration = txn.parked_duration_label || formatDurationWithDays(fallbackDuration);
-  const driverCompanyName = txn.driver?.company_name ?? txn.driver_snapshot?.company_name;
+  const driverCompanyName = txn.driver?.company_name;
   const visitSummary = txn.driver_visit_summary;
 
   return (
@@ -96,7 +96,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
         <Card style={styles.hero}>
           <View style={[styles.plate, { backgroundColor: theme.text }]}>
             <Text variant="heading" tint={theme.surface}>
-              {formatPlate(txn.entry_plate_number_raw)}
+              {formatPlate(txn.vehicle?.plate_number) || 'Unknown plate'}
             </Text>
           </View>
           <Text variant="caption" color="textMuted">
@@ -136,7 +136,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
         <Card>
           <Section title="Visit">
             <View>
-              <KeyValue label="Driver" value={txn.driver?.full_name ?? txn.driver_snapshot?.full_name} icon="user" />
+              <KeyValue label="Driver" value={txn.driver?.full_name ?? 'Unknown driver'} icon="user" />
               <Divider />
               <KeyValue label="Company" value={driverCompanyName} icon="building" />
               <Divider />
@@ -225,7 +225,7 @@ function CheckOutModal({ visible, txnId, onClose, onDone }: { visible: boolean; 
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => checkOut(txnId, 'manual_entry', comments || undefined),
+    mutationFn: () => checkOut(txnId, comments || undefined),
     onSuccess: () => {
       onClose();
       onDone();

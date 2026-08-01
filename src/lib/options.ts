@@ -17,12 +17,6 @@ export const TENANT_TYPES = opt([
   'other',
 ] as const);
 export const DRIVER_TYPES = opt(['building_owner', 'tenant', 'contractor', 'visitor', 'delivery'] as const);
-export const ENTRY_METHODS: Option<string>[] = [
-  { label: 'Manual entry', value: 'manual_entry' },
-  { label: 'Image upload', value: 'image_upload' },
-  { label: 'Browser camera', value: 'browser_camera' },
-];
-
 /* ---- Phase 2 options ---- */
 export const BUILDING_STATUS = opt(['active', 'inactive'] as const);
 export const AREA_TYPES = opt(['standard', 'visitor', 'loading', 'contractor', 'mixed'] as const);

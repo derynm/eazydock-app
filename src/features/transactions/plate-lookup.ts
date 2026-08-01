@@ -59,7 +59,7 @@ export async function lookupPlate(plate: string): Promise<PlateProfile> {
     if (!vehicle) return fx.delay({ found: false, recentVisits: [] }, 200);
 
     const history = fx.transactions
-      .filter((t) => normalize(t.entry_plate_number_raw ?? '') === norm)
+      .filter((t) => t.vehicle_id === vehicle.id)
       .sort((a, b) => new Date(b.car_in_at ?? b.created_at).getTime() - new Date(a.car_in_at ?? a.created_at).getTime());
     const active = history.find((t) => t.status === 'active' || t.status === 'overstay');
     const last = history[0];
@@ -94,7 +94,7 @@ export async function lookupPlate(plate: string): Promise<PlateProfile> {
           transactionNo: t.transaction_no,
           status: t.status,
           driverType: t.driver_type,
-          driverName: t.driver?.full_name ?? t.driver_snapshot?.full_name ?? null,
+          driverName: t.driver?.full_name ?? null,
           tenantId: t.tenant_id,
           tenantName: t.tenant?.name ?? t.tenant_snapshot?.name ?? null,
           carInAt: t.car_in_at,
