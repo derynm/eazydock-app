@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { StyleSheet, View } from 'react-native';
 
 import { toApiError } from '@/api/client';
 import { lookupBuildings, lookupParkingAreas } from '@/api/lookups';
@@ -17,12 +16,11 @@ import {
   parkingSpaceSchema,
   bulkCreateSpacesSchema,
   type ParkingSpaceForm as ParkingSpaceFormValues,
-  type BulkCreateSpacesForm,
+  type BulkCreateSpacesForm as BulkCreateSpacesFormValues,
 } from '@/api/schemas';
 import type { ParkingSpaceResource } from '@/api/types';
 import { FormSheet } from '@/components/form-sheet';
-import { Banner, Button, Select, TextField, Text } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { Button, Select, TextField, Text } from '@/components/ui';
 import { confirm } from '@/lib/confirm';
 import { SPACE_OPERATIONAL_STATUS, SPACE_TYPES, SPACE_USAGE } from '@/lib/options';
 import { zodResolver } from '@/lib/zod-resolver';
@@ -78,7 +76,7 @@ export function ParkingSpaceForm({ visible, space, onClose, onDeleted }: EditPro
     [visible, space],
   );
 
-  const { control, handleSubmit, setError } = useForm<ParkingSpaceFormValues>({
+  const { control, handleSubmit, reset, setError } = useForm<ParkingSpaceFormValues>({
     resolver: zodResolver(parkingSpaceSchema),
     values,
   });
@@ -99,11 +97,18 @@ export function ParkingSpaceForm({ visible, space, onClose, onDeleted }: EditPro
       Object.entries(api.errors).forEach(([field, msgs]) => setError(field as keyof ParkingSpaceFormValues, { message: msgs[0] }));
     },
   });
+  const closeWithoutSaving = () => {
+    reset(values);
+    setBuildingId(space?.building_id ?? null);
+    mutation.reset();
+    setTopError(null);
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
-      onClose={onClose}
+      onClose={closeWithoutSaving}
       title={space ? 'Edit parking space' : 'New parking space'}
       subtitle={space?.space_code}
       onSubmit={handleSubmit((v) => mutation.mutate(v))}
@@ -183,7 +188,7 @@ export function ParkingSpaceForm({ visible, space, onClose, onDeleted }: EditPro
   );
 }
 
-const BULK_EMPTY: BulkCreateSpacesForm = {
+const BULK_EMPTY: BulkCreateSpacesFormValues = {
   parking_area_id: 0,
   prefix: '',
   start_number: 1,
@@ -196,7 +201,6 @@ const BULK_EMPTY: BulkCreateSpacesForm = {
 export function BulkCreateSpacesForm({ visible, onClose }: BulkProps) {
   const qc = useQueryClient();
   const [topError, setTopError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ created: number; skipped: number } | null>(null);
   const [buildingId, setBuildingId] = useState<number | null>(null);
 
   const { data: buildings = [] } = useQuery({ queryKey: ['lookup-buildings'], queryFn: lookupBuildings });
@@ -208,44 +212,49 @@ export function BulkCreateSpacesForm({ visible, onClose }: BulkProps) {
   const buildingOptions = buildings.map((b) => ({ label: b.name, value: b.id }));
   const areaOptions = areas.map((a) => ({ label: a.name, value: a.id }));
 
-  const { control, handleSubmit, setError } = useForm<BulkCreateSpacesForm>({
+  const { control, handleSubmit, setError, reset } = useForm<BulkCreateSpacesFormValues>({
     resolver: zodResolver(bulkCreateSpacesSchema),
     defaultValues: BULK_EMPTY,
   });
 
   const mutation = useMutation({
-    mutationFn: (v: BulkCreateSpacesForm) => bulkCreateParkingSpaces(v as BulkCreateInput),
-    onMutate: () => { setTopError(null); setResult(null); },
-    onSuccess: (res) => {
+    mutationFn: (v: BulkCreateSpacesFormValues) => bulkCreateParkingSpaces(v as BulkCreateInput),
+    onMutate: () => setTopError(null),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['parking-spaces'] });
       qc.invalidateQueries({ queryKey: ['occupancy-grid'] });
-      setResult(res);
+      qc.invalidateQueries({ queryKey: ['lookup-spaces'] });
+      qc.invalidateQueries({ queryKey: ['booking-form-data'] });
+      qc.invalidateQueries({ queryKey: ['bookings-by-space'] });
+      reset(BULK_EMPTY);
+      setBuildingId(null);
+      onClose();
     },
     onError: (err) => {
       const api = toApiError(err);
       setTopError(api.status === 422 ? null : api.message);
-      Object.entries(api.errors).forEach(([field, msgs]) => setError(field as keyof BulkCreateSpacesForm, { message: msgs[0] }));
+      Object.entries(api.errors).forEach(([field, msgs]) => setError(field as keyof BulkCreateSpacesFormValues, { message: msgs[0] }));
     },
   });
 
-  const handleClose = () => { setResult(null); onClose(); };
+  const handleClose = () => {
+    setTopError(null);
+    reset(BULK_EMPTY);
+    setBuildingId(null);
+    mutation.reset();
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
       onClose={handleClose}
       title="Bulk create spaces"
-      onSubmit={result ? handleClose : handleSubmit((v) => mutation.mutate(v))}
+      onSubmit={handleSubmit((v) => mutation.mutate(v))}
       submitting={mutation.isPending}
-      submitLabel={result ? 'Done' : 'Create spaces'}
+      submitLabel="Create spaces"
       error={topError}>
-      {result ? (
-        <View style={styles.result}>
-          <Banner tone="success" title="Done" message={`Created ${result.created} space${result.created !== 1 ? 's' : ''}${result.skipped > 0 ? ` (${result.skipped} skipped — code already exists)` : ''}.`} />
-        </View>
-      ) : (
-        <>
-          <Select label="Building" value={buildingId} options={buildingOptions} onChange={(v) => setBuildingId(v as number)} placeholder="Select building" />
+      <Select label="Building" value={buildingId} options={buildingOptions} onChange={(v) => setBuildingId(v as number)} placeholder="Select building" />
           <Controller
             control={control}
             name="parking_area_id"
@@ -295,15 +304,9 @@ export function BulkCreateSpacesForm({ visible, onClose }: BulkProps) {
               <Select label="Operational status" required value={field.value} options={SPACE_OPERATIONAL_STATUS} onChange={field.onChange} error={fieldState.error?.message} />
             )}
           />
-          <Text variant="caption" color="textMuted">
-            Spaces with the generated code already in this area will be skipped.
-          </Text>
-        </>
-      )}
+      <Text variant="caption" color="textMuted">
+        Spaces with the generated code already in this area will be skipped.
+      </Text>
     </FormSheet>
   );
 }
-
-const styles = StyleSheet.create({
-  result: { gap: Spacing.md },
-});

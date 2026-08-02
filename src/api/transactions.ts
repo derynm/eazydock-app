@@ -29,7 +29,7 @@ function transactionDateBounds(params: ListParams): [number | null, number | nul
 }
 
 function isWithinTransactionDates(transaction: Transaction, dateFrom: number | null, dateTo: number | null): boolean {
-  if (transaction.status === 'active' || transaction.status === 'overstay') return true;
+  if (transaction.status === 'active') return true;
   const time = transactionFilterTime(transaction);
   return (dateFrom === null || time >= dateFrom) && (dateTo === null || time <= dateTo);
 }
@@ -75,7 +75,7 @@ export async function listActiveVehicles(params: ListParams = {}): Promise<Pagin
       (t) => {
         return (
           (!params.building_id || t.building_id === Number(params.building_id)) &&
-          (t.status === 'active' || t.status === 'overstay') &&
+          t.status === 'active' &&
           (!params.parking_area_id || t.parking_area_id === Number(params.parking_area_id)) &&
           (!params.driver_type || t.driver_type === params.driver_type) &&
           isWithinTransactionDates(t, dateFrom, dateTo) &&
@@ -296,6 +296,10 @@ export async function checkIn(input: CheckInInput): Promise<Transaction> {
       duration_minutes: null,
       parked_duration_minutes: 0,
       parked_duration_label: '0m',
+      effective_duration_minutes: 0,
+      parking_time_limit_minutes: null,
+      overstay_minutes: 0,
+      is_overstay: false,
       comments: input.comments ?? null,
       tenant_snapshot: null,
       created_at: nowIso,
@@ -395,7 +399,7 @@ export async function markOverstay(id: number, description: string): Promise<Inc
   if (USE_FIXTURES) {
     const txn = fx.transactions.find((t) => t.id === id);
     if (!txn) throw toApiError({ response: { status: 404, data: { message: 'Transaction not found' } } });
-    if (txn.status !== 'active' && txn.status !== 'overstay') {
+    if (txn.status !== 'active') {
       throw toApiError({ response: { status: 422, data: { message: 'Validation failed', errors: { transaction: ['Overstay can only be logged for an active transaction.'] } } } });
     }
     const nowIso = new Date().toISOString();
@@ -420,7 +424,7 @@ export async function markOverstay(id: number, description: string): Promise<Inc
     if (txnIdx >= 0) {
       fx.transactions[txnIdx] = {
         ...fx.transactions[txnIdx],
-        status: 'overstay',
+        is_overstay: true,
         events: [...(fx.transactions[txnIdx].events ?? []), { id: Date.now(), type: 'overstay', description: 'Flagged as overstay', created_at: nowIso }],
       };
     }

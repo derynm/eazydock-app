@@ -147,6 +147,7 @@ export default function Dashboard() {
               <DashboardChartCarousel
                 metrics={metrics}
                 occupancy={data.occupancy}
+                dailyMovement={data.daily_movement_trend}
                 ringSize={isTablet ? 184 : width < 380 ? 120 : 130}
               />
             </Card>
@@ -385,8 +386,8 @@ function OnSiteRow({
   compact: boolean;
 }) {
   const theme = useTheme();
-  const isOverstay = vehicle.status === 'overstay';
-  const statusLabel = vehicle.status === 'active' ? 'Parked' : titleCase(vehicle.status);
+  const isOverstay = vehicle.is_overstay;
+  const statusLabel = isOverstay ? 'Overstay' : vehicle.status === 'active' ? 'Parked' : titleCase(vehicle.status);
   const duration =
     vehicle.parked_duration_label || formatDuration(vehicle.parked_duration_minutes);
   const plate = formatPlate(vehicle.vehicle?.plate_number) || 'Unknown plate';
@@ -433,17 +434,17 @@ function OnSiteRow({
           style={[
             styles.statusBadge,
             compact && styles.statusBadgeCompact,
-            { backgroundColor: isOverstay ? theme.dangerSoft : theme.successSoft },
+            { backgroundColor: isOverstay ? theme.warningSoft : theme.successSoft },
           ]}>
           <View
             style={[
               styles.statusDot,
-              { backgroundColor: isOverstay ? theme.danger : theme.success },
+              { backgroundColor: isOverstay ? theme.warning : theme.success },
             ]}
           />
           <Text
             variant="caption"
-            tint={isOverstay ? theme.danger : theme.success}
+            tint={isOverstay ? theme.warning : theme.success}
             style={compact && styles.statusTextCompact}>
             {statusLabel}
           </Text>

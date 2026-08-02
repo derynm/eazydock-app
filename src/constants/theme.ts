@@ -54,6 +54,7 @@ export type Palette = {
   infoSoft: string;
   accent: string;
   accentSoft: string;
+  chartBar: string;
   neutralSoft: string;
 
   scrim: string;
@@ -99,6 +100,7 @@ export const Colors: { light: Palette; dark: Palette } = {
     infoSoft: Brand[50],
     accent: '#7C3AED',
     accentSoft: '#F2EAFF',
+    chartBar: '#3E75C9',
     neutralSoft: '#EEF1F6',
 
     scrim: 'rgba(8, 15, 31, 0.45)',
@@ -141,6 +143,7 @@ export const Colors: { light: Palette; dark: Palette } = {
     infoSoft: 'rgba(32,138,239,0.16)',
     accent: '#A78BFA',
     accentSoft: 'rgba(167,139,250,0.16)',
+    chartBar: '#3E75C9',
     neutralSoft: '#1B232F',
 
     scrim: 'rgba(0, 0, 0, 0.6)',

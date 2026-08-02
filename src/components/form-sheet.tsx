@@ -17,10 +17,11 @@ type Props = {
   submitting?: boolean;
   submitLabel?: string;
   error?: string | null;
+  hideCloseButton?: boolean;
   children: ReactNode;
 };
 
-export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitting, submitLabel = 'Save', error, children }: Props) {
+export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitting, submitLabel = 'Save', error, hideCloseButton = false, children }: Props) {
   const theme = useTheme();
   const { isTablet } = useResponsive();
   const scrollRef = useRef<ScrollView>(null);
@@ -44,7 +45,7 @@ export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitt
             </Text>
           ) : null}
         </View>
-        <IconButton name="close" accessibilityLabel="Close" onPress={onClose} color={theme.textSecondary} />
+        {!hideCloseButton ? <IconButton name="close" accessibilityLabel="Close" onPress={onClose} color={theme.textSecondary} /> : null}
       </View>
 
       <FormScrollView ref={scrollRef} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>

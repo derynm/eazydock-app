@@ -67,6 +67,7 @@ export default function ProfileScreen() {
     setResetOpen(false);
     setResetTopError(null);
     reset(emptyResetPassword);
+    resetMutation.reset();
   };
 
   return (

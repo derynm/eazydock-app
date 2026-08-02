@@ -35,8 +35,7 @@ export function statusMeta(status?: string | null): StatusMeta {
   return { label: titleCase(status), tone: TONES[status] ?? 'neutral' };
 }
 
-/** "active" transactions read better as "Parked". */
+/** Transaction status remains separate from derived conditions such as overstay. */
 export function transactionStatusMeta(status?: string | null): StatusMeta {
-  if (status === 'active') return { label: 'Parked', tone: 'success' };
   return statusMeta(status);
 }

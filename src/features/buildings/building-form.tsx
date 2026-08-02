@@ -1,16 +1,22 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { toApiError } from '@/api/client';
 import { createBuilding, deleteBuilding, updateBuilding, type BuildingInput } from '@/api/buildings';
+import { listAllParkingAreasForBuilding } from '@/api/parking-areas';
 import { buildingSchema, type BuildingForm as BuildingFormValues } from '@/api/schemas';
 import type { BuildingResource } from '@/api/types';
 import { FormSheet } from '@/components/form-sheet';
-import { Button, Select, TextField } from '@/components/ui';
+import { OperatingDaySelector } from '@/components/operating-day-selector';
+import { Button, Select, Text, TextField, TimeField } from '@/components/ui';
+import { Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 import { BUILDING_STATUS } from '@/lib/options';
 import { zodResolver } from '@/lib/zod-resolver';
+import { normalizeOperatingDays } from '@/lib/operating-schedule';
 
 type Props = { visible: boolean; building: BuildingResource | null; onClose: () => void; onDeleted?: () => void };
 
@@ -28,9 +34,14 @@ const EMPTY: BuildingFormValues = {
   postal_code: '',
   country: '',
   status: 'active',
+  operating_start_time: '',
+  operating_end_time: '',
+  operating_days: normalizeOperatingDays(null),
+  parking_time_limit_minutes: null,
+  operating_schedule_parking_area_ids: [],
 };
 
-const toInput = (v: BuildingFormValues): BuildingInput => ({
+const toInput = (v: BuildingFormValues, synchronizeMembership = false): BuildingInput => ({
   name: v.name,
   code: v.code || null,
   building_type: v.building_type || null,
@@ -44,11 +55,25 @@ const toInput = (v: BuildingFormValues): BuildingInput => ({
   postal_code: v.postal_code || null,
   country: v.country || null,
   status: v.status,
+  operating_start_time: v.operating_start_time || null,
+  operating_end_time: v.operating_end_time || null,
+  operating_days: v.operating_days,
+  parking_time_limit_minutes: v.parking_time_limit_minutes,
+  ...(synchronizeMembership
+    ? { operating_schedule_parking_area_ids: v.operating_schedule_parking_area_ids }
+    : {}),
 });
 
 export function BuildingForm({ visible, building, onClose, onDeleted }: Props) {
   const qc = useQueryClient();
+  const theme = useTheme();
   const [topError, setTopError] = useState<string | null>(null);
+  const areasQuery = useQuery({
+    queryKey: ['parking-areas', 'building-membership', building?.id],
+    queryFn: () => listAllParkingAreasForBuilding(building!.id),
+    enabled: visible && !!building,
+  });
+  const areas = areasQuery.data ?? [];
 
   const values = useMemo<BuildingFormValues>(
     () =>
@@ -67,37 +92,52 @@ export function BuildingForm({ visible, building, onClose, onDeleted }: Props) {
             postal_code: building.postal_code ?? '',
             country: building.country ?? '',
             status: building.status,
+            operating_start_time: building.operating_start_time?.slice(0, 5) ?? '',
+            operating_end_time: building.operating_end_time?.slice(0, 5) ?? '',
+            operating_days: normalizeOperatingDays(building.operating_days),
+            parking_time_limit_minutes: building.parking_time_limit_minutes,
+            operating_schedule_parking_area_ids: areas.filter((area) => area.inherits_building_operating_schedule).map((area) => area.id),
           }
         : EMPTY,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visible, building],
+    [visible, building, areasQuery.data],
   );
 
-  const { control, handleSubmit, setError } = useForm<BuildingFormValues>({
+  const { control, handleSubmit, reset, setError } = useForm<BuildingFormValues>({
     resolver: zodResolver(buildingSchema),
     values,
   });
 
   const mutation = useMutation({
     mutationFn: (v: BuildingFormValues) =>
-      building ? updateBuilding(building.id, toInput(v)) : createBuilding(toInput(v)),
+      building ? updateBuilding(building.id, toInput(v, areasQuery.isSuccess)) : createBuilding(toInput(v)),
     onMutate: () => setTopError(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['buildings'] });
+      qc.invalidateQueries({ queryKey: ['parking-areas'] });
+      qc.invalidateQueries({ queryKey: ['parking-area'] });
+      qc.invalidateQueries({ queryKey: ['operating-hours'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
       if (building) qc.invalidateQueries({ queryKey: ['building', building.id] });
       onClose();
     },
     onError: (err) => {
       const api = toApiError(err);
       setTopError(api.status === 422 ? null : api.message);
-      Object.entries(api.errors).forEach(([field, msgs]) => setError(field as keyof BuildingFormValues, { message: msgs[0] }));
+      Object.entries(api.errors).forEach(([field, msgs]) => setError(field.split('.')[0] as keyof BuildingFormValues, { message: msgs[0] }));
     },
   });
+  const closeWithoutSaving = () => {
+    reset(values);
+    mutation.reset();
+    setTopError(null);
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
-      onClose={onClose}
+      onClose={closeWithoutSaving}
       title={building ? 'Edit building' : 'New building'}
       subtitle={building?.name}
       onSubmit={handleSubmit((v) => mutation.mutate(v))}
@@ -196,6 +236,50 @@ export function BuildingForm({ visible, building, onClose, onDeleted }: Props) {
         )}
       />
 
+      <Controller
+        control={control}
+        name="operating_days"
+        render={({ field, fieldState }) => <OperatingDaySelector value={field.value} onChange={field.onChange} error={fieldState.error?.message} />}
+      />
+      <View style={styles.timeFields}>
+        <Controller control={control} name="operating_start_time" render={({ field, fieldState }) => (
+          <View style={styles.flex}><TimeField label="Operation starts" value={field.value} onChange={field.onChange} clearable />{fieldState.error ? <Text variant="caption" tint={theme.danger}>{fieldState.error.message}</Text> : null}</View>
+        )} />
+        <Controller control={control} name="operating_end_time" render={({ field, fieldState }) => (
+          <View style={styles.flex}><TimeField label="Operation ends" value={field.value} onChange={field.onChange} clearable />{fieldState.error ? <Text variant="caption" tint={theme.danger}>{fieldState.error.message}</Text> : null}</View>
+        )} />
+      </View>
+      <Controller control={control} name="parking_time_limit_minutes" render={({ field, fieldState }) => (
+        <TextField label="Parking time limit (minutes)" keyboardType="number-pad" placeholder="No limit" value={field.value === null ? '' : String(field.value)} onChangeText={(text) => field.onChange(text.trim() ? Number(text) : null)} error={fieldState.error?.message} hint="Leave empty for no time limit." />
+      )} />
+
+      {building ? (
+        <Controller control={control} name="operating_schedule_parking_area_ids" render={({ field, fieldState }) => (
+          <View style={[styles.membership, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
+            <View style={styles.membershipHeader}>
+              <View style={styles.flex}>
+                <Text variant="subtitle">Parking areas using this schedule</Text>
+                <Text variant="caption" color="textSecondary">{field.value.length} of {areas.length} selected</Text>
+              </View>
+              <View style={styles.shortcuts}>
+                <Button title="Select all" size="sm" variant="ghost" disabled={areasQuery.isLoading} onPress={() => field.onChange(areas.map((area) => area.id))} />
+                <Button title="Clear all" size="sm" variant="ghost" disabled={areasQuery.isLoading} onPress={() => field.onChange([])} />
+              </View>
+            </View>
+            <Text variant="caption" color="textMuted">Removing an inherited area makes it custom and keeps the previously effective building schedule.</Text>
+            {areasQuery.isError ? <Text variant="caption" tint={theme.danger}>Couldn’t load all parking areas. Retry by reopening this form.</Text> : null}
+            {areas.map((area) => {
+              const selected = field.value.includes(area.id);
+              return <Pressable key={area.id} accessibilityRole="checkbox" accessibilityState={{ checked: selected }} onPress={() => field.onChange(selected ? field.value.filter((id) => id !== area.id) : [...field.value, area.id])} style={[styles.areaOption, { borderColor: selected ? theme.primary : theme.border, backgroundColor: selected ? theme.primarySoft : theme.surface }]}>
+                <View style={styles.flex}><Text variant="bodyStrong">{area.name}</Text><Text variant="caption" color="textMuted">{area.code ?? 'No code'} · {area.inherits_building_operating_schedule ? 'Currently inherited' : 'Currently custom'}</Text></View>
+                <Text variant="label" tint={selected ? theme.primary : theme.textMuted}>{selected ? 'Selected' : 'Custom'}</Text>
+              </Pressable>;
+            })}
+            {fieldState.error ? <Text variant="caption" tint={theme.danger}>{fieldState.error.message}</Text> : null}
+          </View>
+        )} />
+      ) : null}
+
       {building && onDeleted ? (
         <Button
           title="Delete building"
@@ -219,3 +303,12 @@ export function BuildingForm({ visible, building, onClose, onDeleted }: Props) {
     </FormSheet>
   );
 }
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  timeFields: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
+  membership: { borderWidth: 1, borderRadius: Radius.lg, padding: Spacing.lg, gap: Spacing.md },
+  membershipHeader: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.sm },
+  shortcuts: { flexDirection: 'row', flexWrap: 'wrap' },
+  areaOption: { minHeight: 52, borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+});

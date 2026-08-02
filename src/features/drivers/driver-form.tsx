@@ -56,7 +56,7 @@ export function DriverForm({ visible, driver, onClose, onDeleted }: Props) {
     [visible, driver],
   );
 
-  const { control, handleSubmit, setError } = useForm<DriverFormValues>({
+  const { control, handleSubmit, reset, setError } = useForm<DriverFormValues>({
     resolver: zodResolver(driverSchema),
     values,
   });
@@ -78,11 +78,17 @@ export function DriverForm({ visible, driver, onClose, onDeleted }: Props) {
       );
     },
   });
+  const closeWithoutSaving = () => {
+    reset(values);
+    mutation.reset();
+    setTopError(null);
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
-      onClose={onClose}
+      onClose={closeWithoutSaving}
       title={driver ? 'Edit driver' : 'New driver'}
       subtitle={driver?.full_name}
       onSubmit={handleSubmit((v) => mutation.mutate(v))}

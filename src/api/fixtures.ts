@@ -58,6 +58,7 @@ export const userPayload: UserPayload = {
     'locations.tenants': { view: true, create: true, update: true, delete: false },
     'locations.buildings': ALL_ACTIONS,
     'locations.parking_areas': ALL_ACTIONS,
+    'locations.operating_hours': { view: true, create: false, update: true, delete: false },
     'locations.spaces': ALL_ACTIONS,
     'locations.allocations': ALL_ACTIONS,
     'administration.users': ALL_ACTIONS,
@@ -199,7 +200,7 @@ export const transactions: Transaction[] = Array.from({ length: 34 }).map((_, i)
   const tenant = tenants[i % tenants.length];
   const inMins = active ? 30 + i * 23 : 60 * 24 + i * 47;
   const dur = active ? Math.floor((now - (now - inMins * 60_000)) / 60_000) : 45 + (i % 6) * 30;
-  const status = overstay ? 'overstay' : active ? 'active' : i % 13 === 0 ? 'cancelled' : 'completed';
+  const status = active ? 'active' : i % 13 === 0 ? 'cancelled' : 'completed';
   return {
     id: i + 1,
     transaction_no: `TXN-${String(10_420 + i)}`,
@@ -217,6 +218,10 @@ export const transactions: Transaction[] = Array.from({ length: 34 }).map((_, i)
     duration_minutes: active ? null : dur,
     parked_duration_minutes: dur,
     parked_duration_label: durationLabel(dur),
+    effective_duration_minutes: dur,
+    parking_time_limit_minutes: i % 4 === 0 ? 120 : null,
+    overstay_minutes: overstay ? Math.max(1, dur - 120) : 0,
+    is_overstay: overstay,
     comments: i % 5 === 0 ? 'Refrigerated delivery — priority bay.' : null,
     tenant_snapshot: { name: tenant.name },
     created_at: iso(inMins),
@@ -271,17 +276,17 @@ export const bookings: Booking[] = Array.from({ length: 18 }).map((_, i) => {
 /* ---- Phase 2 fixtures ---- */
 
 export const buildingResources: BuildingResource[] = [
-  { id: 1, name: 'Riverside Tower', code: 'RIV', building_type: 'office', contact_name: 'Sam Walsh', contact_phone: '0291230001', contact_email: 'sam@riverside.test', address_line_1: '1 Riverside Drive', address_line_2: null, suburb: 'Sydney', state: 'NSW', postal_code: '2000', country: 'Australia', latitude: -33.8688, longitude: 151.2093, status: 'active', created_at: iso(60 * 24 * 30), updated_at: iso(60 * 24 * 5) },
-  { id: 2, name: 'Dock 7 Warehouse', code: 'D7W', building_type: 'warehouse', contact_name: 'Riley Park', contact_phone: '0291230002', contact_email: 'riley@dock7.test', address_line_1: '7 Dock Street', address_line_2: null, suburb: 'Pyrmont', state: 'NSW', postal_code: '2009', country: 'Australia', latitude: -33.8714, longitude: 151.1945, status: 'active', created_at: iso(60 * 24 * 25), updated_at: iso(60 * 24 * 3) },
-  { id: 3, name: 'Central Plaza', code: 'CPZ', building_type: 'mixed', contact_name: 'Morgan Lee', contact_phone: '0291230003', contact_email: 'morgan@centralplaza.test', address_line_1: '50 Central Avenue', address_line_2: 'Level 1', suburb: 'Melbourne', state: 'VIC', postal_code: '3000', country: 'Australia', latitude: -37.8136, longitude: 144.9631, status: 'active', created_at: iso(60 * 24 * 20), updated_at: iso(60 * 24 * 2) },
+  { id: 1, name: 'Riverside Tower', code: 'RIV', building_type: 'office', contact_name: 'Sam Walsh', contact_phone: '0291230001', contact_email: 'sam@riverside.test', address_line_1: '1 Riverside Drive', address_line_2: null, suburb: 'Sydney', state: 'NSW', postal_code: '2000', country: 'Australia', latitude: -33.8688, longitude: 151.2093, status: 'active', operating_start_time: '07:00', operating_end_time: '20:00', operating_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], parking_time_limit_minutes: 240, created_at: iso(60 * 24 * 30), updated_at: iso(60 * 24 * 5) },
+  { id: 2, name: 'Dock 7 Warehouse', code: 'D7W', building_type: 'warehouse', contact_name: 'Riley Park', contact_phone: '0291230002', contact_email: 'riley@dock7.test', address_line_1: '7 Dock Street', address_line_2: null, suburb: 'Pyrmont', state: 'NSW', postal_code: '2009', country: 'Australia', latitude: -33.8714, longitude: 151.1945, status: 'active', operating_start_time: '20:00', operating_end_time: '07:00', operating_days: null, parking_time_limit_minutes: 180, created_at: iso(60 * 24 * 25), updated_at: iso(60 * 24 * 3) },
+  { id: 3, name: 'Central Plaza', code: 'CPZ', building_type: 'mixed', contact_name: 'Morgan Lee', contact_phone: '0291230003', contact_email: 'morgan@centralplaza.test', address_line_1: '50 Central Avenue', address_line_2: 'Level 1', suburb: 'Melbourne', state: 'VIC', postal_code: '3000', country: 'Australia', latitude: -37.8136, longitude: 144.9631, status: 'active', operating_start_time: null, operating_end_time: null, operating_days: null, parking_time_limit_minutes: null, created_at: iso(60 * 24 * 20), updated_at: iso(60 * 24 * 2) },
 ];
 
 export const parkingAreaResources: ParkingAreaResource[] = [
-  { id: 1, building_id: 1, name: 'Level B1', code: 'B1', level: 'B1', area_type: 'standard', capacity: 40, status: 'active', notes: null, created_at: iso(60 * 24 * 28), updated_at: iso(60 * 24 * 4), building: { id: 1, name: 'Riverside Tower' } },
-  { id: 2, building_id: 1, name: 'Level B2', code: 'B2', level: 'B2', area_type: 'visitor', capacity: 20, status: 'active', notes: 'Visitor parking only', created_at: iso(60 * 24 * 28), updated_at: iso(60 * 24 * 4), building: { id: 1, name: 'Riverside Tower' } },
-  { id: 3, building_id: 2, name: 'Loading Bay A', code: 'LBA', level: 'Ground', area_type: 'loading', capacity: 8, status: 'active', notes: null, created_at: iso(60 * 24 * 23), updated_at: iso(60 * 24 * 2), building: { id: 2, name: 'Dock 7 Warehouse' } },
-  { id: 4, building_id: 2, name: 'Yard', code: 'YRD', level: null, area_type: 'contractor', capacity: 15, status: 'maintenance', notes: 'Resurfacing in progress', created_at: iso(60 * 24 * 23), updated_at: iso(60 * 24 * 1), building: { id: 2, name: 'Dock 7 Warehouse' } },
-  { id: 5, building_id: 3, name: 'Visitor Deck', code: 'VD1', level: 'Roof', area_type: 'visitor', capacity: 30, status: 'active', notes: null, created_at: iso(60 * 24 * 18), updated_at: iso(60 * 24 * 1), building: { id: 3, name: 'Central Plaza' } },
+  { id: 1, building_id: 1, name: 'Level B1', code: 'B1', level: 'B1', area_type: 'standard', capacity: 40, status: 'active', notes: null, inherits_building_operating_schedule: true, operating_start_time: '06:00', operating_end_time: '23:00', operating_days: ['monday', 'tuesday', 'wednesday'], parking_time_limit_minutes: 300, effective_operating_start_time: '07:00', effective_operating_end_time: '20:00', effective_operating_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], effective_parking_time_limit_minutes: 240, created_at: iso(60 * 24 * 28), updated_at: iso(60 * 24 * 4), building: { id: 1, name: 'Riverside Tower' } },
+  { id: 2, building_id: 1, name: 'Level B2', code: 'B2', level: 'B2', area_type: 'visitor', capacity: 20, status: 'active', notes: 'Visitor parking only', inherits_building_operating_schedule: false, operating_start_time: '00:00', operating_end_time: '23:59', operating_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'], parking_time_limit_minutes: null, effective_operating_start_time: '00:00', effective_operating_end_time: '23:59', effective_operating_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'], effective_parking_time_limit_minutes: null, created_at: iso(60 * 24 * 28), updated_at: iso(60 * 24 * 4), building: { id: 1, name: 'Riverside Tower' } },
+  { id: 3, building_id: 2, name: 'Loading Bay A', code: 'LBA', level: 'Ground', area_type: 'loading', capacity: 8, status: 'active', notes: null, inherits_building_operating_schedule: true, operating_start_time: null, operating_end_time: null, operating_days: null, parking_time_limit_minutes: null, effective_operating_start_time: '20:00', effective_operating_end_time: '07:00', effective_operating_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'], effective_parking_time_limit_minutes: 180, created_at: iso(60 * 24 * 23), updated_at: iso(60 * 24 * 2), building: { id: 2, name: 'Dock 7 Warehouse' } },
+  { id: 4, building_id: 2, name: 'Yard', code: 'YRD', level: null, area_type: 'contractor', capacity: 15, status: 'maintenance', notes: 'Resurfacing in progress', inherits_building_operating_schedule: false, operating_start_time: null, operating_end_time: null, operating_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'], parking_time_limit_minutes: 90, effective_operating_start_time: null, effective_operating_end_time: null, effective_operating_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'], effective_parking_time_limit_minutes: 90, created_at: iso(60 * 24 * 23), updated_at: iso(60 * 24 * 1), building: { id: 2, name: 'Dock 7 Warehouse' } },
+  { id: 5, building_id: 3, name: 'Visitor Deck', code: 'VD1', level: 'Roof', area_type: 'visitor', capacity: 30, status: 'active', notes: null, inherits_building_operating_schedule: false, operating_start_time: '06:00', operating_end_time: '22:00', operating_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'], parking_time_limit_minutes: null, effective_operating_start_time: '06:00', effective_operating_end_time: '22:00', effective_operating_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'], effective_parking_time_limit_minutes: null, created_at: iso(60 * 24 * 18), updated_at: iso(60 * 24 * 1), building: { id: 3, name: 'Central Plaza' } },
 ];
 
 const SPACE_TYPES_FX = ['standard', 'accessible', 'ev', 'visitor', 'standard', 'standard', 'loading', 'motorcycle'] as const;
@@ -365,25 +370,38 @@ export function dashboard(): DashboardResponse {
       Math.floor((now - new Date(transaction.car_in_at ?? now).getTime()) / 60_000),
     );
     const vehicle = vehicles.find((item) => item.id === transaction.vehicle_id);
+    const tenant = tenants.find((item) => item.id === transaction.tenant_id);
 
     return {
       id: transaction.id,
       transaction_no: transaction.transaction_no,
       status: 'active' as const,
       driver_type: transaction.driver_type,
+      building_id: transaction.building_id,
       parking_area_id: transaction.parking_area_id,
       parking_space_id: transaction.parking_space_id,
+      tenant_id: transaction.tenant_id,
+      driver_id: transaction.driver_id,
       vehicle_id: transaction.vehicle_id,
+      transaction_date: transaction.transaction_date,
       car_in_at: transaction.car_in_at ?? new Date(now).toISOString(),
       car_out_at: null,
       duration_minutes: null,
       parked_duration_minutes: parkedMinutes,
       parked_duration_label: durationLabel(parkedMinutes),
+      effective_duration_minutes: parkedMinutes,
+      parking_time_limit_minutes: transaction.parking_time_limit_minutes,
+      overstay_minutes: transaction.overstay_minutes,
+      is_overstay: transaction.is_overstay,
+      comments: transaction.comments,
+      tenant_snapshot: tenant ? { id: tenant.id, name: tenant.name } : null,
+      created_at: transaction.created_at,
       parking_area: transaction.parking_area ?? null,
       parking_space: transaction.parking_space ?? null,
       vehicle: vehicle
         ? { id: vehicle.id, plate_number: vehicle.plate_number, plate_state: vehicle.plate_state }
         : null,
+      events: transaction.events ?? [],
     };
   });
 
@@ -408,8 +426,10 @@ export function dashboard(): DashboardResponse {
       flexible_allocation_used: 2,
       flexible_allocation_usage_percentage: 20,
       overstay_alerts: 0,
-      overstay_threshold_minutes: 240,
       open_overstay_incidents: 0,
+      daily_utilisation_percentage: 13.3,
+      daily_utilised_minutes: 2873,
+      daily_available_minutes: 21600,
     },
     occupancy: {
       period: 'today',
@@ -427,10 +447,47 @@ export function dashboard(): DashboardResponse {
       daily_average: 3.4,
     },
     daily_movement_trend: [
-      { date: '2026-07-13', label: 'Mon', car_in: 8, car_out: 6 },
-      { date: '2026-07-14', label: 'Tue', car_in: 12, car_out: 9 },
+      { date: '2026-07-26', label: 'Sun', car_in: 28, car_out: 25 },
+      { date: '2026-07-27', label: 'Mon', car_in: 49, car_out: 46 },
+      { date: '2026-07-28', label: 'Tue', car_in: 52, car_out: 50 },
+      { date: '2026-07-29', label: 'Wed', car_in: 50, car_out: 48 },
+      { date: '2026-07-30', label: 'Thu', car_in: 61, car_out: 57 },
+      { date: '2026-07-31', label: 'Fri', car_in: 59, car_out: 55 },
+      { date: '2026-08-01', label: 'Sat', car_in: 47, car_out: 25 },
+    ],
+    weekly_movement_breakdown: [
+      { type: 'car_in', label: 'Car in', value: 5 },
+      { type: 'car_out', label: 'Car out', value: 3 },
     ],
     vehicle_breakdown: [],
+    previous_week_utilisation: [],
+    this_week_occupancy: {
+      filters: {
+        date_from: '2026-07-27',
+        date_to: '2026-08-01',
+        building_id: 1,
+      },
+      summary: {
+        date: '2026-08-01',
+        snapshot_at: '2026-08-01T11:22:00+10:00',
+        total_bays: 15,
+        occupied_bays: 2,
+        available_bays: 13,
+        percentage: 13.3,
+      },
+      daily: [
+        { date: '2026-07-27', snapshot_at: '2026-07-27T23:59:59+10:00', total_bays: 15, occupied_bays: 5, available_bays: 10, percentage: 33.3 },
+        { date: '2026-07-28', snapshot_at: '2026-07-28T23:59:59+10:00', total_bays: 15, occupied_bays: 7, available_bays: 8, percentage: 46.7 },
+        { date: '2026-07-29', snapshot_at: '2026-07-29T23:59:59+10:00', total_bays: 15, occupied_bays: 6, available_bays: 9, percentage: 40 },
+        { date: '2026-07-30', snapshot_at: '2026-07-30T23:59:59+10:00', total_bays: 15, occupied_bays: 9, available_bays: 6, percentage: 60 },
+        { date: '2026-07-31', snapshot_at: '2026-07-31T23:59:59+10:00', total_bays: 15, occupied_bays: 8, available_bays: 7, percentage: 53.3 },
+        { date: '2026-08-01', snapshot_at: '2026-08-01T11:22:00+10:00', total_bays: 15, occupied_bays: 2, available_bays: 13, percentage: 13.3 },
+      ],
+      meta: {
+        occupancy_basis: 'assigned_transactions_at_snapshot',
+        capacity_basis: 'active_bays_at_snapshot',
+      },
+    },
   };
 }
 

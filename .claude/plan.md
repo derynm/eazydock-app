@@ -222,6 +222,7 @@ the same `menu.access` slugs the backend enforces (`routes/admin.php`).
 | **Locations** | Tenants | `locations.tenants` | 1 |
 | | Buildings | `locations.buildings` | 2 |
 | | Parking areas | `locations.parking_areas` | 2 |
+| | Operating Hours | `locations.operating_hours` | 2 |
 | | Parking spaces (+ occupancy grid) | `locations.spaces` | 2 |
 | | Allocations | `locations.allocations` | 2 |
 | **Reports** | Occupancy / utilisation / overstay / history… | `reports.*` | 3 |
@@ -681,6 +682,25 @@ booking.
 }
 ```
 
+### Operating Hours  (`locations.operating_hours`)
+
+Dedicated settings endpoints; do not use the general Parking Area update API.
+
+| Method · Path | Action | Body / notes |
+|---|---|---|
+| `GET /admin/operating-hours?building_id=` | view | company-scoped Parking Areas with Building, active bay count, hours, limit, and status |
+| `PUT /admin/operating-hours/{parkingArea}` | update | `{ operating_start_time, operating_end_time, parking_time_limit_minutes }` |
+
+Operating times are a nullable pair in `HH:mm`; equal times are invalid and an
+end earlier than its start is an overnight window. A null pair displays **Full
+elapsed duration** and disables automatic overstay calculation. The nullable
+time limit is a positive whole number with no default or `240` fallback.
+Operating Hours never block check-in or checkout.
+
+**Resource:** `{ id, building_id, building: { id, name }, name, code,
+active_bays_count, operating_start_time, operating_end_time,
+parking_time_limit_minutes, status }`.
+
 ### Parking allocations  (`locations.allocations`)
 
 | Method · Path | Action |
@@ -722,6 +742,10 @@ Only valid for an **active** transaction — otherwise `422 errors.transaction`
 ("Overstay can only be logged for an active transaction."). Same
 `parking.area.access` restriction as check-out/change-space/cancel (non-admins
 need an active `ParkingAreaUser` assignment for that transaction's area).
+Automatic or manually flagged overstay does not create an `overstay`
+transaction status. Transaction UI reads `is_overstay` while the actual status
+remains `active`; responses also expose `effective_duration_minutes`,
+`parking_time_limit_minutes`, and `overstay_minutes`.
 
 ### Transactions export  (`operations.transactions,export`) — file download
 

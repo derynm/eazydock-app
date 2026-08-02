@@ -1,6 +1,6 @@
 import { api, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { AreaStatus, AreaType, ListParams, Paginator, ParkingAreaResource } from './types';
+import type { AreaStatus, AreaType, ListParams, OperatingDay, Paginator, ParkingAreaResource } from './types';
 
 export type ParkingAreaInput = {
   building_id: number;
@@ -11,6 +11,11 @@ export type ParkingAreaInput = {
   capacity: number;
   status: AreaStatus;
   notes?: string | null;
+  inherits_building_operating_schedule: boolean;
+  operating_start_time?: string | null;
+  operating_end_time?: string | null;
+  operating_days?: OperatingDay[] | null;
+  parking_time_limit_minutes?: number | null;
 };
 
 export async function listParkingAreas(params: ListParams = {}): Promise<Paginator<ParkingAreaResource>> {
@@ -30,6 +35,19 @@ export async function listParkingAreas(params: ListParams = {}): Promise<Paginat
   } catch (e) {
     throw toApiError(e);
   }
+}
+
+export async function listAllParkingAreasForBuilding(buildingId: number): Promise<ParkingAreaResource[]> {
+  const rows: ParkingAreaResource[] = [];
+  let page = 1;
+  let lastPage = 1;
+  do {
+    const response = await listParkingAreas({ building_id: buildingId, page });
+    rows.push(...response.data);
+    lastPage = response.meta.last_page;
+    page += 1;
+  } while (page <= lastPage);
+  return rows;
 }
 
 export async function getParkingArea(id: number): Promise<ParkingAreaResource> {
@@ -59,6 +77,15 @@ export async function createParkingArea(input: ParkingAreaInput): Promise<Parkin
       capacity: input.capacity,
       status: input.status,
       notes: input.notes ?? null,
+      inherits_building_operating_schedule: input.inherits_building_operating_schedule,
+      operating_start_time: input.operating_start_time ?? null,
+      operating_end_time: input.operating_end_time ?? null,
+      operating_days: input.operating_days ?? null,
+      parking_time_limit_minutes: input.parking_time_limit_minutes ?? null,
+      effective_operating_start_time: input.inherits_building_operating_schedule ? building?.operating_start_time ?? null : input.operating_start_time ?? null,
+      effective_operating_end_time: input.inherits_building_operating_schedule ? building?.operating_end_time ?? null : input.operating_end_time ?? null,
+      effective_operating_days: input.inherits_building_operating_schedule ? building?.operating_days ?? [] : input.operating_days ?? [],
+      effective_parking_time_limit_minutes: input.inherits_building_operating_schedule ? building?.parking_time_limit_minutes ?? null : input.parking_time_limit_minutes ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       building: building ? { id: building.id, name: building.name } : undefined,
@@ -85,6 +112,11 @@ export async function updateParkingArea(id: number, input: ParkingAreaInput): Pr
       building: building ? { id: building.id, name: building.name } : fx.parkingAreaResources[idx].building,
       updated_at: new Date().toISOString(),
     };
+    const updated = fx.parkingAreaResources[idx];
+    updated.effective_operating_start_time = input.inherits_building_operating_schedule ? building?.operating_start_time ?? null : input.operating_start_time ?? null;
+    updated.effective_operating_end_time = input.inherits_building_operating_schedule ? building?.operating_end_time ?? null : input.operating_end_time ?? null;
+    updated.effective_operating_days = input.inherits_building_operating_schedule ? building?.operating_days ?? [] : input.operating_days ?? [];
+    updated.effective_parking_time_limit_minutes = input.inherits_building_operating_schedule ? building?.parking_time_limit_minutes ?? null : input.parking_time_limit_minutes ?? null;
     return fx.delay(fx.parkingAreaResources[idx]);
   }
   try {

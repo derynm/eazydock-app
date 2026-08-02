@@ -40,7 +40,7 @@ export function IncidentForm({ visible, incident, onClose }: Props) {
     [visible, incident],
   );
 
-  const { control, handleSubmit, setError } = useForm<IncidentFormValues>({
+  const { control, handleSubmit, reset, setError } = useForm<IncidentFormValues>({
     resolver: zodResolver(incidentSchema),
     values,
   });
@@ -75,11 +75,17 @@ export function IncidentForm({ visible, incident, onClose }: Props) {
       Object.entries(api.errors).forEach(([field, msgs]) => setError(field as keyof IncidentFormValues, { message: msgs[0] }));
     },
   });
+  const closeWithoutSaving = () => {
+    reset(values);
+    mutation.reset();
+    setTopError(null);
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
-      onClose={onClose}
+      onClose={closeWithoutSaving}
       title={incident ? 'Edit incident' : 'Report incident'}
       onSubmit={handleSubmit((v) => mutation.mutate(v))}
       submitting={mutation.isPending}

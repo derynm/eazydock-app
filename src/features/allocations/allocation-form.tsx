@@ -87,7 +87,7 @@ export function AllocationForm({ visible, allocation, onClose, onDeleted }: Prop
     [visible, allocation],
   );
 
-  const { control, handleSubmit, setError } = useForm<AllocationFormValues>({
+  const { control, handleSubmit, reset, setError } = useForm<AllocationFormValues>({
     resolver: zodResolver(allocationSchema),
     values,
   });
@@ -107,11 +107,18 @@ export function AllocationForm({ visible, allocation, onClose, onDeleted }: Prop
       Object.entries(api.errors).forEach(([field, msgs]) => setError(field as keyof AllocationFormValues, { message: msgs[0] }));
     },
   });
+  const closeWithoutSaving = () => {
+    reset(values);
+    setBuildingId(allocation?.building_id ?? null);
+    mutation.reset();
+    setTopError(null);
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
-      onClose={onClose}
+      onClose={closeWithoutSaving}
       title={allocation ? 'Edit allocation' : 'New allocation'}
       onSubmit={handleSubmit((v) => mutation.mutate(v))}
       submitting={mutation.isPending}

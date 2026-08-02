@@ -48,6 +48,7 @@ export const MOBILE_MENU: MenuGroup[] = [
       { key: 'tenants', label: 'Tenants', route: '/tenants', icon: 'tenants', slug: 'locations.tenants' },
       { key: 'buildings', label: 'Buildings', route: '/buildings', icon: 'buildings', slug: 'locations.buildings' },
       { key: 'parking-areas', label: 'Parking Areas', route: '/parking-areas', icon: 'parkingArea', slug: 'locations.parking_areas' },
+      { key: 'operating-hours', label: 'Operating Hours', route: '/operating-hours', icon: 'clock', slug: 'locations.operating_hours' },
       { key: 'parking-spaces', label: 'Parking Spaces', route: '/parking-spaces', icon: 'parkingSpace', slug: 'locations.spaces' },
       { key: 'allocations', label: 'Allocations', route: '/allocations', icon: 'allocation', slug: 'locations.allocations' },
     ],

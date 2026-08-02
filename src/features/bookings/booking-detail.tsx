@@ -185,9 +185,15 @@ function FulfilModal({ visible, bookingId, onClose, onDone }: { visible: boolean
       setError(err.field('booking') ?? err.message);
     },
   });
+  const closeWithoutSaving = () => {
+    setComments('');
+    setError(null);
+    mutation.reset();
+    onClose();
+  };
 
   return (
-    <FormSheet visible={visible} onClose={onClose} title="Fulfil booking" subtitle="Creates a check-in transaction" onSubmit={() => mutation.mutate()} submitting={mutation.isPending} submitLabel="Fulfil" error={error}>
+    <FormSheet visible={visible} onClose={closeWithoutSaving} title="Fulfil booking" subtitle="Creates a check-in transaction" onSubmit={() => mutation.mutate()} submitting={mutation.isPending} submitLabel="Fulfil" error={error}>
       <TextField label="Comments" placeholder="Optional" multiline value={comments} onChangeText={setComments} style={{ minHeight: 80, textAlignVertical: 'top' }} />
     </FormSheet>
   );

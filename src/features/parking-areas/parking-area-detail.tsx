@@ -9,6 +9,7 @@ import { ParkingAreaForm } from '@/features/parking-areas/parking-area-form';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDate, titleCase } from '@/lib/format';
+import { formatOperatingDays, formatOperatingHours } from '@/lib/operating-schedule';
 import { statusMeta } from '@/lib/status';
 
 export function ParkingAreaDetail({ id, onDeleted }: { id: number; onDeleted?: () => void }) {
@@ -45,6 +46,21 @@ export function ParkingAreaDetail({ id, onDeleted }: { id: number; onDeleted?: (
             <Badge label={titleCase(area.area_type)} tone="info" />
             <Badge label={meta.label} tone={meta.tone} dot />
           </View>
+        </Card>
+
+        <Card>
+          <Section title="Operating schedule">
+            <View>
+              <View style={styles.scheduleHeading}>
+                <Badge label={area.inherits_building_operating_schedule ? 'Building schedule' : 'Custom schedule'} tone={area.inherits_building_operating_schedule ? 'primary' : 'neutral'} />
+              </View>
+              <KeyValue label="Days" value={formatOperatingDays(area.effective_operating_days)} icon="clock" />
+              <Divider />
+              <KeyValue label="Hours" value={formatOperatingHours(area.effective_operating_start_time, area.effective_operating_end_time)} />
+              <Divider />
+              <KeyValue label="Parking time limit" value={area.effective_parking_time_limit_minutes === null ? 'No time limit configured' : `${area.effective_parking_time_limit_minutes} minutes`} />
+            </View>
+          </Section>
         </Card>
 
         <Card>
@@ -92,4 +108,5 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', gap: Spacing.sm },
   icon: { width: 64, height: 64, borderRadius: Radius.lg, alignItems: 'center', justifyContent: 'center' },
   heroBadges: { flexDirection: 'row', gap: Spacing.sm },
+  scheduleHeading: { marginBottom: Spacing.md },
 });

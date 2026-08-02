@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 
 import { toApiError } from '@/api/client';
 import { createBooking, getBookingFormData, updateBooking, type BookingInput } from '@/api/bookings';
@@ -83,19 +83,19 @@ export function BookingForm({ visible, booking, onClose }: Props) {
     [visible, booking],
   );
 
-  const { control, handleSubmit, setError, watch, setValue } = useForm<BookingFormValues>({
+  const { control, handleSubmit, reset, setError, setValue } = useForm<BookingFormValues>({
     resolver: zodResolver(bookingSchema),
     values: formValues,
   });
 
-  const buildingId = watch('building_id');
-  const areaId = watch('parking_area_id');
+  const buildingId = useWatch({ control, name: 'building_id' });
+  const areaId = useWatch({ control, name: 'parking_area_id' });
 
   const buildings = formData?.buildings ?? [];
   const areas = (formData?.areas ?? []).filter((a) => a.building_id === buildingId);
   const spaces = (formData?.spaces ?? []).filter((s) => s.parking_area_id === areaId);
   const tenants = formData?.tenants ?? [];
-  const driverId = watch('driver_id');
+  const driverId = useWatch({ control, name: 'driver_id' });
 
   useEffect(() => {
     if (!visible) {
@@ -135,11 +135,20 @@ export function BookingForm({ visible, booking, onClose }: Props) {
       });
     },
   });
+  const closeWithoutSaving = () => {
+    reset(formValues);
+    setDriverText(booking?.driver?.full_name ?? (booking?.driver_id ? `Driver #${booking.driver_id}` : ''));
+    setDriverCompany(booking?.driver?.company_name ?? '');
+    initializedDriver.current = null;
+    mutation.reset();
+    setTopError(null);
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
-      onClose={onClose}
+      onClose={closeWithoutSaving}
       title={booking ? 'Edit booking' : 'New booking'}
       subtitle={booking?.booking_no}
       onSubmit={handleSubmit((v) => mutation.mutate(v))}

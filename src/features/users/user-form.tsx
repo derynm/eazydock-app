@@ -62,11 +62,18 @@ export function UserForm({ visible, user, onClose }: Props) {
       Object.entries(api.errors).forEach(([f, msgs]) => setError(f as never, { message: msgs[0] }));
     },
   });
+  const closeWithoutSaving = () => {
+    createForm.reset(createValues);
+    updateForm.reset(updateValues);
+    mutation.reset();
+    setTopError(null);
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
-      onClose={onClose}
+      onClose={closeWithoutSaving}
       title={user ? 'Edit user' : 'Invite user'}
       onSubmit={handleSubmit((v) => mutation.mutate(v))}
       submitting={mutation.isPending}

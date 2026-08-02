@@ -30,7 +30,8 @@ function toTime(date: Date): string {
 }
 
 function displayTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(fromTime(value));
+  const time = fromTime(value);
+  return `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
 }
 
 export function TimeField({ label, value, onChange, placeholder = 'Any time', clearable = false }: Props) {

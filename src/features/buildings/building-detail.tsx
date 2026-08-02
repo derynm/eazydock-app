@@ -9,6 +9,7 @@ import { BuildingForm } from '@/features/buildings/building-form';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDate, titleCase } from '@/lib/format';
+import { formatOperatingDays, formatOperatingHours } from '@/lib/operating-schedule';
 import { statusMeta } from '@/lib/status';
 
 export function BuildingDetail({ id, onDeleted }: { id: number; onDeleted?: () => void }) {
@@ -76,6 +77,18 @@ export function BuildingDetail({ id, onDeleted }: { id: number; onDeleted?: () =
               <KeyValue label="Phone" value={building.contact_phone} icon="phone" />
               <Divider />
               <KeyValue label="Email" value={building.contact_email} icon="mail" />
+            </View>
+          </Section>
+        </Card>
+
+        <Card>
+          <Section title="Operating schedule">
+            <View>
+              <KeyValue label="Days" value={formatOperatingDays(building.operating_days)} icon="clock" />
+              <Divider />
+              <KeyValue label="Hours" value={formatOperatingHours(building.operating_start_time, building.operating_end_time)} />
+              <Divider />
+              <KeyValue label="Parking time limit" value={building.parking_time_limit_minutes === null ? 'No time limit configured' : `${building.parking_time_limit_minutes} minutes`} />
             </View>
           </Section>
         </Card>

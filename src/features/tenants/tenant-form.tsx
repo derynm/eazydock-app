@@ -69,7 +69,7 @@ export function TenantForm({ visible, tenant, onClose, onDeleted }: Props) {
     [visible, tenant],
   );
 
-  const { control, handleSubmit, setError } = useForm<TenantFormValues>({
+  const { control, handleSubmit, reset, setError } = useForm<TenantFormValues>({
     resolver: zodResolver(tenantSchema),
     values,
   });
@@ -89,11 +89,17 @@ export function TenantForm({ visible, tenant, onClose, onDeleted }: Props) {
       Object.entries(api.errors).forEach(([field, msgs]) => setError(field as keyof TenantFormValues, { message: msgs[0] }));
     },
   });
+  const closeWithoutSaving = () => {
+    reset(values);
+    mutation.reset();
+    setTopError(null);
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
-      onClose={onClose}
+      onClose={closeWithoutSaving}
       title={tenant ? 'Edit tenant' : 'New tenant'}
       subtitle={tenant?.name}
       onSubmit={handleSubmit((v) => mutation.mutate(v))}

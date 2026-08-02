@@ -61,7 +61,7 @@ export async function lookupPlate(plate: string): Promise<PlateProfile> {
     const history = fx.transactions
       .filter((t) => t.vehicle_id === vehicle.id)
       .sort((a, b) => new Date(b.car_in_at ?? b.created_at).getTime() - new Date(a.car_in_at ?? a.created_at).getTime());
-    const active = history.find((t) => t.status === 'active' || t.status === 'overstay');
+    const active = history.find((t) => t.status === 'active');
     const last = history[0];
     const suggestedDriver = last?.driver_id ? fx.drivers.find((d) => d.id === last.driver_id) : undefined;
 

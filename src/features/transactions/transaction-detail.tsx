@@ -17,6 +17,7 @@ import { formatDate, formatDateTime, formatDuration, formatPlate, formatTime, ti
 import { toSydneyDateTimeValue } from '@/lib/sydney-time';
 import { useForm, Controller } from 'react-hook-form';
 import { transactionStatusMeta } from '@/lib/status';
+import type { Transaction } from '@/api/types';
 
 function minutesBetween(startIso?: string | null, endIso?: string | null) {
   if (!startIso) return null;
@@ -47,7 +48,7 @@ function sydneyValue(value?: string | null): string | null {
   return value ? toSydneyDateTimeValue(value) : null;
 }
 
-export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: () => void }) {
+export function TransactionDetail({ id, summary, onChanged }: { id: number; summary?: Transaction; onChanged?: () => void }) {
   const theme = useTheme();
   const qc = useQueryClient();
   const { can } = usePermissions();
@@ -55,7 +56,17 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
   const [movingSpace, setMovingSpace] = useState(false);
   const [markingOverstay, setMarkingOverstay] = useState(false);
 
-  const { data: txn, isLoading, isError, error } = useQuery({ queryKey: ['transaction', id], queryFn: () => getTransaction(id) });
+  const cachedSummary = summary ?? qc.getQueryData<Transaction>(['transaction-summary', id]);
+  const { data: detail, isLoading, isError, error } = useQuery({ queryKey: ['transaction', id], queryFn: () => getTransaction(id) });
+  const txn = detail
+    ? {
+        ...cachedSummary,
+        ...detail,
+        // Some deployed detail responses can lag behind the list contract.
+        // Once either response identifies an overstay, preserve that state.
+        is_overstay: Boolean(cachedSummary?.is_overstay || detail.is_overstay),
+      }
+    : cachedSummary;
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['transaction', id] });
@@ -66,7 +77,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
     onChanged?.();
   };
 
-  if (isLoading) {
+  if (isLoading && !txn) {
     return (
       <View style={styles.loading}>
         <Skeleton width="50%" height={28} />
@@ -79,10 +90,10 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
   }
 
   const meta = transactionStatusMeta(txn.status);
-  const isActive = txn.status === 'active' || txn.status === 'overstay';
+  const isActive = txn.status === 'active';
   const canUpdate = can('operations.transactions', 'update');
   const canCancel = can('operations.transactions', 'delete');
-  const canMarkOverstay = can('operations.incidents', 'create') && txn.status === 'active';
+  const canMarkOverstay = can('operations.incidents', 'create') && txn.status === 'active' && !txn.is_overstay;
   const fallbackDuration = txn.parked_duration_minutes ??
     minutesBetween(txn.car_in_at, isActive ? null : txn.car_out_at) ??
     txn.duration_minutes;
@@ -104,6 +115,7 @@ export function TransactionDetail({ id, onChanged }: { id: number; onChanged?: (
           </Text>
           <View style={styles.heroBadges}>
             <Badge label={meta.label} tone={meta.tone} dot />
+            {txn.is_overstay ? <Badge label="Overstay" tone="warning" dot /> : null}
             <Badge label={titleCase(txn.driver_type)} tone="neutral" />
           </View>
           <Text variant="body" color="textSecondary">
@@ -232,9 +244,15 @@ function CheckOutModal({ visible, txnId, onClose, onDone }: { visible: boolean; 
     },
     onError: (e) => setError(toApiError(e).message),
   });
+  const closeWithoutSaving = () => {
+    setComments('');
+    setError(null);
+    mutation.reset();
+    onClose();
+  };
 
   return (
-    <FormSheet visible={visible} onClose={onClose} title="Check out vehicle" onSubmit={() => mutation.mutate()} submitting={mutation.isPending} submitLabel="Check out" error={error}>
+    <FormSheet visible={visible} onClose={closeWithoutSaving} title="Check out vehicle" onSubmit={() => mutation.mutate()} submitting={mutation.isPending} submitLabel="Check out" error={error}>
       <TextField label="Comments" placeholder="Optional" multiline value={comments} onChangeText={setComments} style={{ minHeight: 80, textAlignVertical: 'top' }} />
     </FormSheet>
   );
@@ -260,7 +278,7 @@ function MarkOverstayModal({ visible, txnId, onClose, onDone }: { visible: boole
   return (
     <FormSheet
       visible={visible}
-      onClose={() => { reset(); onClose(); }}
+      onClose={() => { reset(); setError(null); mutation.reset(); onClose(); }}
       title="Mark as overstay"
       onSubmit={handleSubmit((v) => mutation.mutate(v))}
       submitting={mutation.isPending}
@@ -305,11 +323,18 @@ function ChangeSpaceModal({ visible, txnId, areaId, onClose, onDone }: { visible
       setError(err.status === 403 ? "You don't have access to that parking area." : err.message);
     },
   });
+  const closeWithoutSaving = () => {
+    setSpaceId(null);
+    setComments('');
+    setError(null);
+    mutation.reset();
+    onClose();
+  };
 
   return (
     <FormSheet
       visible={visible}
-      onClose={onClose}
+      onClose={closeWithoutSaving}
       title="Move to another bay"
       onSubmit={() => (spaceId ? mutation.mutate() : setError('Select a bay'))}
       submitting={mutation.isPending}

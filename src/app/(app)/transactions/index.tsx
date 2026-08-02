@@ -71,7 +71,7 @@ function toLocalTime(value: string): string {
 function TransactionCard({ transaction, onPress }: { transaction: Transaction; onPress: () => void }) {
   const theme = useTheme();
   const meta = transactionStatusMeta(transaction.status);
-  const active = transaction.status === 'active' || transaction.status === 'overstay';
+  const active = transaction.status === 'active';
   const location = [transaction.parking_area?.name, transaction.parking_space?.space_code]
     .filter(Boolean)
     .join('  ·  ');
@@ -91,12 +91,12 @@ function TransactionCard({ transaction, onPress }: { transaction: Transaction; o
       <View
         style={[
           styles.cardIcon,
-          { backgroundColor: meta.tone === 'warning' ? theme.warningSoft : theme.primarySoft },
+          { backgroundColor: theme.primarySoft },
         ]}>
         <Icon
           name="transactions"
           size={20}
-          color={meta.tone === 'warning' ? theme.warning : theme.primary}
+          color={theme.primary}
         />
       </View>
       <View style={styles.cardBody}>
@@ -122,6 +122,7 @@ function TransactionCard({ transaction, onPress }: { transaction: Transaction; o
       </View>
       <View style={styles.cardStatus}>
         <Badge label={meta.label} tone={meta.tone} size="sm" dot />
+        {transaction.is_overstay ? <Badge label="Overstay" tone="warning" size="sm" dot /> : null}
         <View style={styles.durationLine}>
           <Icon name="clock" size={14} color={theme.textMuted} />
           <Text variant="caption" color="textMuted" numberOfLines={1}>
@@ -157,27 +158,30 @@ export default function TransactionsScreen() {
   const today = dateValueFromPicker(sydneyNowPickerDate());
 
   const commonParams = {
-    search: debounced,
+    search: debounced || undefined,
     building_id: selectedBuilding?.id,
     parking_area_id: areaId || undefined,
     driver_type: driverType || undefined,
   };
-  const paramsForScope = (targetScope: TransactionScope): ListParams => ({
-    ...commonParams,
-    status: targetScope === 'completed' ? 'completed' : undefined,
-    date_from:
-      (dateMode === 'today'
-        ? dateAndTime(today, todayTimeFrom, false)
-        : dateMode === 'between'
-          ? dateAndTime(dateFrom, '', false)
-          : '') || undefined,
-    date_to:
-      (dateMode === 'today'
-        ? dateAndTime(today, todayTimeTo, true)
-        : dateMode === 'between'
-          ? dateAndTime(dateTo, '', true)
-          : '') || undefined,
-  });
+  const paramsForScope = (targetScope: TransactionScope): ListParams => {
+    const hasTodayTimeFilter = dateMode === 'today' && (!!todayTimeFrom || !!todayTimeTo);
+    const dateParams = hasTodayTimeFilter
+      ? {
+          date_from: dateAndTime(today, todayTimeFrom, false) || undefined,
+          date_to: dateAndTime(today, todayTimeTo, true) || undefined,
+        }
+      : dateMode === 'between'
+        ? {
+            date_from: dateAndTime(dateFrom, '', false) || undefined,
+            date_to: dateAndTime(dateTo, '', true) || undefined,
+          }
+        : {};
+    return {
+      ...commonParams,
+      ...dateParams,
+      status: targetScope === 'completed' ? 'completed' : undefined,
+    };
+  };
   const fetcherForScope = (targetScope: TransactionScope) =>
     targetScope === 'active' ? listActiveVehicles : listTransactions;
   const exportFilters: ListParams = {
@@ -215,6 +219,11 @@ export default function TransactionsScreen() {
     areaId !== null ||
     driverType !== '' ||
     (dateMode === 'today' ? !!todayTimeFrom || !!todayTimeTo : !!dateFrom || !!dateTo);
+  const openTransaction = (id: number) => {
+    const transaction = list.items.find((item) => item.id === id);
+    if (transaction) qc.setQueryData(['transaction-summary', id], transaction);
+    router.push(`/transactions/${id}`);
+  };
   const handleCheckOut = async (transaction: Transaction) => {
     const ok = await confirm({
       title: 'Check out vehicle?',
@@ -312,7 +321,7 @@ export default function TransactionsScreen() {
           loadingMore={list.isFetchingNextPage}
           emptyTitle={scope === 'active' ? 'No vehicles on site' : scope === 'completed' ? 'No completed transactions' : 'No transactions found'}
           emptyDescription={debounced ? 'Try a different search.' : scope === 'active' ? 'Checked-in vehicles will appear here.' : scope === 'completed' ? 'Checked-out vehicles will appear here.' : undefined}
-          onOpen={(id) => router.push(`/transactions/${id}`)}
+          onOpen={openTransaction}
           canCheckOut={can('operations.transactions', 'update')}
           onCheckOut={handleCheckOut}
         />
@@ -329,8 +338,8 @@ export default function TransactionsScreen() {
           loadingMore={list.isFetchingNextPage}
           emptyTitle={scope === 'active' ? 'No vehicles on site' : scope === 'completed' ? 'No completed transactions' : 'No transactions found'}
           emptyDescription={debounced ? 'Try a different search.' : scope === 'active' ? 'Checked-in vehicles will appear here.' : scope === 'completed' ? 'Checked-out vehicles will appear here.' : undefined}
-          onOpen={(id) => router.push(`/transactions/${id}`)}
-          renderDetail={(id) => <TransactionDetail key={id} id={id} />}
+          onOpen={openTransaction}
+          renderDetail={(id) => <TransactionDetail key={id} id={id} summary={list.items.find((item) => item.id === id)} />}
           listHeader={toolbar}
           showSeparators={isTablet}
           phoneCards={false}
@@ -338,7 +347,7 @@ export default function TransactionsScreen() {
           contentBottomPadding={isTablet ? Spacing.xxl : 96}
           renderRow={(t, { selected, onPress }) => {
             const meta = transactionStatusMeta(t.status);
-            const active = t.status === 'active' || t.status === 'overstay';
+            const active = t.status === 'active';
             if (!isTablet) return <TransactionCard transaction={t} onPress={onPress} />;
 
             return (
@@ -349,13 +358,14 @@ export default function TransactionsScreen() {
                 selected={selected}
                 onPress={onPress}
                 leading={
-                  <View style={[styles.icon, { backgroundColor: meta.tone === 'warning' ? theme.warningSoft : theme.primarySoft }]}>
-                    <Icon name="transactions" size={20} color={meta.tone === 'warning' ? theme.warning : theme.primary} />
+                  <View style={[styles.icon, { backgroundColor: theme.primarySoft }]}>
+                    <Icon name="transactions" size={20} color={theme.primary} />
                   </View>
                 }
                 trailing={
                   <View style={styles.trail}>
                     <Badge label={meta.label} tone={meta.tone} size="sm" dot />
+                    {t.is_overstay ? <Badge label="Overstay" tone="warning" size="sm" dot /> : null}
                     <Text variant="caption" color="textMuted">
                       {active ? durationSince(t.car_in_at) : formatDuration(t.duration_minutes)}
                     </Text>

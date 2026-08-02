@@ -108,7 +108,7 @@ export async function listBookingsBySpace(params: BookingsBySpaceParams): Promis
       });
 
       const isOccupied = fx.transactions.some(
-        (t) => t.parking_space_id === space.id && (t.status === 'active' || t.status === 'overstay'),
+        (t) => t.parking_space_id === space.id && t.status === 'active',
       );
       const hasActiveBooking = spaceBookings.some((b) => b.status === 'pending' || b.status === 'confirmed');
       const spaceStatus: SpaceStatus = isOccupied ? 'occupied' : hasActiveBooking ? 'booked' : 'available';
@@ -319,6 +319,10 @@ export async function fulfilBooking(id: number, comments?: string): Promise<Tran
       duration_minutes: null,
       parked_duration_minutes: 0,
       parked_duration_label: '0m',
+      effective_duration_minutes: 0,
+      parking_time_limit_minutes: null,
+      overstay_minutes: 0,
+      is_overstay: false,
       comments: comments ?? null,
       tenant_snapshot: booking.tenant ? { name: booking.tenant.name } : null,
       created_at: nowIso,

@@ -42,7 +42,7 @@ export type TenantType =
   | 'delivery_partner'
   | 'other';
 export type DriverType = 'building_owner' | 'tenant' | 'contractor' | 'visitor' | 'delivery';
-export type TransactionStatus = 'active' | 'completed' | 'cancelled' | 'overstay';
+export type TransactionStatus = 'active' | 'completed' | 'cancelled';
 export type BookingStatus = 'pending' | 'confirmed' | 'fulfilled' | 'cancelled' | 'expired';
 
 /* ---- Resources ---- */
@@ -136,6 +136,10 @@ export type Transaction = {
   duration_minutes: number | null;
   parked_duration_minutes: number;
   parked_duration_label: string;
+  effective_duration_minutes: number;
+  parking_time_limit_minutes: number | null;
+  overstay_minutes: number;
+  is_overstay: boolean;
   comments: string | null;
   tenant_snapshot: Record<string, string | null> | null;
   created_at: string;
@@ -220,8 +224,10 @@ export type DashboardMetrics = {
   flexible_allocation_used: number;
   flexible_allocation_usage_percentage: number;
   overstay_alerts: number;
-  overstay_threshold_minutes: number;
   open_overstay_incidents: number;
+  daily_utilisation_percentage: number;
+  daily_utilised_minutes: number;
+  daily_available_minutes: number;
 };
 
 export type DashboardOccupancy = {
@@ -238,17 +244,29 @@ export type DashboardActiveVehicle = {
   transaction_no: string;
   status: TransactionStatus;
   driver_type: DriverType;
+  building_id: number;
   parking_area_id: number;
   parking_space_id: number | null;
+  tenant_id: number | null;
+  driver_id: number | null;
   vehicle_id: number | null;
+  transaction_date: string;
   car_in_at: string;
   car_out_at: string | null;
   duration_minutes: number | null;
   parked_duration_minutes: number;
   parked_duration_label: string;
+  effective_duration_minutes: number;
+  parking_time_limit_minutes: number | null;
+  overstay_minutes: number;
+  is_overstay: boolean;
+  comments: string | null;
+  tenant_snapshot: { id: number; name: string } | null;
+  created_at: string;
   parking_area: { id: number; name: string } | null;
   parking_space: { id: number; space_code: string } | null;
   vehicle: { id: number; plate_number: string; plate_state: string | null } | null;
+  events: TransactionEvent[];
 };
 
 export type DashboardBreakdown = {
@@ -264,18 +282,61 @@ export type DashboardDailyMovement = {
   car_out: number;
 };
 
+export type DashboardVisitorTypeTrend = {
+  date: string;
+  label: string;
+  booked: number;
+  visitor: number;
+  tenant: number;
+  delivery: number;
+};
+
+export type DashboardDailyUtilisation = {
+  date: string;
+  label: string;
+  percentage: number;
+  utilised_minutes: number;
+  available_minutes: number;
+};
+
+export type DashboardOccupancySnapshot = {
+  date: string;
+  snapshot_at: string;
+  total_bays: number;
+  occupied_bays: number;
+  available_bays: number;
+  percentage: number;
+};
+
+export type DashboardWeekOccupancy = {
+  filters: {
+    date_from: string;
+    date_to: string;
+    building_id: number | null;
+  };
+  summary: DashboardOccupancySnapshot;
+  daily: DashboardOccupancySnapshot[];
+  meta: {
+    occupancy_basis: string;
+    capacity_basis: string;
+  };
+};
+
 export type DashboardResponse = {
   metrics: DashboardMetrics;
   occupancy: DashboardOccupancy;
   active_vehicles: DashboardActiveVehicle[];
-  visitor_type_trend: DashboardBreakdown[];
+  visitor_type_trend: DashboardVisitorTypeTrend[];
   movement_summary: {
     last_24_hours: number;
     last_7_days: number;
     daily_average: number;
   };
   daily_movement_trend: DashboardDailyMovement[];
+  weekly_movement_breakdown: DashboardBreakdown[];
   vehicle_breakdown: DashboardBreakdown[];
+  previous_week_utilisation: DashboardDailyUtilisation[];
+  this_week_occupancy: DashboardWeekOccupancy;
 };
 
 /* ---- Lookups ---- */
@@ -307,10 +368,24 @@ export type UserCategory = 'building_owner' | 'tenant' | 'contractor' | 'visitor
 export type IncidentType = 'damage' | 'unauthorised_vehicle' | 'overstay' | 'blocked_space' | 'safety' | 'other';
 export type IncidentStatus = 'open' | 'resolved' | 'cancelled';
 export type AreaStatus = 'active' | 'inactive' | 'maintenance';
+export type OperatingDay =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
+export interface OperatingScheduleFields {
+  operating_start_time: string | null;
+  operating_end_time: string | null;
+  operating_days: OperatingDay[] | null;
+  parking_time_limit_minutes: number | null;
+}
 
 /* ---- Phase 2 resources ---- */
 
-export type BuildingResource = {
+export type BuildingResource = OperatingScheduleFields & {
   id: number;
   name: string;
   code: string | null;
@@ -331,7 +406,7 @@ export type BuildingResource = {
   updated_at: string;
 };
 
-export type ParkingAreaResource = {
+export type ParkingAreaResource = OperatingScheduleFields & {
   id: number;
   building_id: number;
   name: string;
@@ -343,7 +418,27 @@ export type ParkingAreaResource = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  inherits_building_operating_schedule: boolean;
+  effective_operating_start_time: string | null;
+  effective_operating_end_time: string | null;
+  effective_operating_days: OperatingDay[];
+  effective_parking_time_limit_minutes: number | null;
   building?: { id: number; name: string };
+};
+
+export type OperatingHoursResource = OperatingScheduleFields & {
+  id: number;
+  building_id: number;
+  building: { id: number; name: string } & OperatingScheduleFields;
+  name: string;
+  code: string | null;
+  active_bays_count: number;
+  inherits_building_operating_schedule: boolean;
+  effective_operating_start_time: string | null;
+  effective_operating_end_time: string | null;
+  effective_operating_days: OperatingDay[];
+  effective_parking_time_limit_minutes: number | null;
+  status: AreaStatus;
 };
 
 export type ParkingSpaceResource = {

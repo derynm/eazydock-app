@@ -1,6 +1,6 @@
 import { api, toApiError, USE_FIXTURES } from './client';
 import * as fx from './fixtures';
-import type { BuildingResource, ListParams, Paginator } from './types';
+import type { BuildingResource, ListParams, OperatingDay, Paginator } from './types';
 
 export type BuildingInput = {
   name: string;
@@ -16,6 +16,11 @@ export type BuildingInput = {
   postal_code?: string | null;
   country?: string | null;
   status: 'active' | 'inactive';
+  operating_start_time?: string | null;
+  operating_end_time?: string | null;
+  operating_days?: OperatingDay[] | null;
+  parking_time_limit_minutes?: number | null;
+  operating_schedule_parking_area_ids?: number[];
 };
 
 export async function listBuildings(params: ListParams = {}): Promise<Paginator<BuildingResource>> {
@@ -69,6 +74,10 @@ export async function createBuilding(input: BuildingInput): Promise<BuildingReso
       latitude: null,
       longitude: null,
       status: input.status,
+      operating_start_time: input.operating_start_time ?? null,
+      operating_end_time: input.operating_end_time ?? null,
+      operating_days: input.operating_days ?? null,
+      parking_time_limit_minutes: input.parking_time_limit_minutes ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -87,7 +96,29 @@ export async function updateBuilding(id: number, input: BuildingInput): Promise<
   if (USE_FIXTURES) {
     const idx = fx.buildingResources.findIndex((b) => b.id === id);
     if (idx < 0) throw toApiError({ response: { status: 404, data: { message: 'Building not found' } } });
-    fx.buildingResources[idx] = { ...fx.buildingResources[idx], ...input, updated_at: new Date().toISOString() };
+    const { operating_schedule_parking_area_ids: areaIds, ...buildingInput } = input;
+    const previous = fx.buildingResources[idx];
+    if (areaIds !== undefined) {
+      for (const area of fx.parkingAreaResources.filter((candidate) => candidate.building_id === id)) {
+        const shouldInherit = areaIds.includes(area.id);
+        if (area.inherits_building_operating_schedule && !shouldInherit) {
+          area.operating_start_time = previous.operating_start_time;
+          area.operating_end_time = previous.operating_end_time;
+          area.operating_days = previous.operating_days;
+          area.parking_time_limit_minutes = previous.parking_time_limit_minutes;
+        }
+        area.inherits_building_operating_schedule = shouldInherit;
+      }
+    }
+    fx.buildingResources[idx] = { ...previous, ...buildingInput, updated_at: new Date().toISOString() };
+    for (const area of fx.parkingAreaResources.filter((candidate) => candidate.building_id === id)) {
+      if (area.inherits_building_operating_schedule) {
+        area.effective_operating_start_time = fx.buildingResources[idx].operating_start_time;
+        area.effective_operating_end_time = fx.buildingResources[idx].operating_end_time;
+        area.effective_operating_days = fx.buildingResources[idx].operating_days ?? [];
+        area.effective_parking_time_limit_minutes = fx.buildingResources[idx].parking_time_limit_minutes;
+      }
+    }
     return fx.delay(fx.buildingResources[idx]);
   }
   try {

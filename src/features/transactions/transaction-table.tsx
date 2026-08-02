@@ -194,7 +194,7 @@ function TransactionTableRow({
 }) {
   const theme = useTheme();
   const meta = transactionStatusMeta(transaction.status);
-  const active = transaction.status === 'active' || transaction.status === 'overstay';
+  const active = transaction.status === 'active';
   const driver = transaction.driver?.full_name ?? 'Unknown driver';
   const location =
     [transaction.parking_area?.name, transaction.parking_space?.space_code].filter(Boolean).join(' · ') || '—';
@@ -212,8 +212,9 @@ function TransactionTableRow({
       <Cell width={115} value={formatPlate(transaction.vehicle?.plate_number) || 'Unknown plate'} strong />
       <Cell width={180} value={driver} />
       <Cell width={190} value={location} />
-      <View style={[styles.cell, { width: 120 }]}>
+      <View style={[styles.cell, styles.statusCell, { width: 120 }]}>
         <Badge label={meta.label} tone={meta.tone} size="sm" dot />
+        {transaction.is_overstay ? <Badge label="Overstay" tone="warning" size="sm" dot /> : null}
       </View>
       <View style={[styles.cell, styles.alignRight, { width: 110 }]}>
         <Text variant="caption" color="textSecondary" numberOfLines={1}>
@@ -292,6 +293,7 @@ const styles = StyleSheet.create({
   },
   rowCompact: { minHeight: 54 },
   cell: { paddingHorizontal: Spacing.md, justifyContent: 'center' },
+  statusCell: { alignItems: 'flex-start', gap: 2 },
   alignRight: { alignItems: 'flex-end' },
   actionCell: { paddingHorizontal: Spacing.sm, alignItems: 'flex-end', justifyContent: 'center' },
   state: { flex: 1, justifyContent: 'center' },

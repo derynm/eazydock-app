@@ -6,6 +6,10 @@ import { z } from 'zod';
 
 import { instantFromSydneyDateTimeValue } from '@/lib/sydney-time';
 
+const operatingDaySchema = z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+const timeSchema = z.string().regex(/^$|^(?:[01]\d|2[0-3]):[0-5]\d$/, 'Use 24-hour time (HH:mm)');
+const optionalPositiveInteger = z.number().int('Time limit must be a whole number').positive('Time limit must be at least 1').nullable();
+
 const optionalString = (max: number) =>
   z
     .string()
@@ -102,6 +106,16 @@ export const buildingSchema = z.object({
   postal_code: optionalString(30),
   country: optionalString(100),
   status: z.enum(['active', 'inactive']),
+  operating_start_time: timeSchema,
+  operating_end_time: timeSchema,
+  operating_days: z.array(operatingDaySchema).min(1, 'Select at least one operation day'),
+  parking_time_limit_minutes: optionalPositiveInteger,
+  operating_schedule_parking_area_ids: z.array(z.number().int().positive()),
+}).superRefine((value, context) => {
+  const hasStart = value.operating_start_time.length > 0;
+  const hasEnd = value.operating_end_time.length > 0;
+  if (hasStart !== hasEnd) context.addIssue({ code: 'custom', path: [hasStart ? 'operating_end_time' : 'operating_start_time'], message: 'Both operating times are required' });
+  else if (hasStart && value.operating_start_time === value.operating_end_time) context.addIssue({ code: 'custom', path: ['operating_end_time'], message: 'End time must be different from start time' });
 });
 export type BuildingForm = z.infer<typeof buildingSchema>;
 
@@ -114,8 +128,49 @@ export const parkingAreaSchema = z.object({
   capacity: z.number({ message: 'Capacity is required' }).int().min(1, 'Capacity must be at least 1'),
   status: z.enum(['active', 'inactive', 'maintenance']),
   notes: optionalString(2000),
+  inherits_building_operating_schedule: z.boolean(),
+  operating_start_time: timeSchema,
+  operating_end_time: timeSchema,
+  operating_days: z.array(operatingDaySchema),
+  parking_time_limit_minutes: optionalPositiveInteger,
+}).superRefine((value, context) => {
+  if (value.inherits_building_operating_schedule) return;
+  if (value.operating_days.length === 0) context.addIssue({ code: 'custom', path: ['operating_days'], message: 'Select at least one operation day' });
+  const hasStart = value.operating_start_time.length > 0;
+  const hasEnd = value.operating_end_time.length > 0;
+  if (hasStart !== hasEnd) context.addIssue({ code: 'custom', path: [hasStart ? 'operating_end_time' : 'operating_start_time'], message: 'Both operating times are required' });
+  else if (hasStart && value.operating_start_time === value.operating_end_time) context.addIssue({ code: 'custom', path: ['operating_end_time'], message: 'End time must be different from start time' });
 });
 export type ParkingAreaForm = z.infer<typeof parkingAreaSchema>;
+
+export const operatingHoursSchema = z
+  .object({
+    use_full_elapsed_duration: z.boolean(),
+    no_parking_time_limit: z.boolean(),
+    inherits_building_operating_schedule: z.boolean(),
+    operating_start_time: timeSchema,
+    operating_end_time: timeSchema,
+    operating_days: z.array(operatingDaySchema),
+    parking_time_limit_minutes: z.number().int('Time limit must be a whole number').positive('Time limit must be at least 1').nullable(),
+  })
+  .superRefine((value, context) => {
+    if (value.inherits_building_operating_schedule) return;
+    if (value.operating_days.length === 0) {
+      context.addIssue({ code: 'custom', path: ['operating_days'], message: 'Select at least one operation day' });
+    }
+    if (!value.no_parking_time_limit && value.parking_time_limit_minutes === null) {
+      context.addIssue({ code: 'custom', path: ['parking_time_limit_minutes'], message: 'Parking Time Limit is required' });
+    }
+    if (value.use_full_elapsed_duration) return;
+    const hasStart = value.operating_start_time.length > 0;
+    const hasEnd = value.operating_end_time.length > 0;
+    if (hasStart !== hasEnd) {
+      context.addIssue({ code: 'custom', path: [hasStart ? 'operating_end_time' : 'operating_start_time'], message: 'Both operating times are required' });
+    } else if (hasStart && value.operating_start_time === value.operating_end_time) {
+      context.addIssue({ code: 'custom', path: ['operating_end_time'], message: 'End time must be different from start time' });
+    }
+  });
+export type OperatingHoursForm = z.infer<typeof operatingHoursSchema>;
 
 export const parkingSpaceSchema = z.object({
   parking_area_id: z.number({ message: 'Select a parking area' }).int().positive('Select a parking area'),

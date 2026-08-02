@@ -239,7 +239,7 @@ export async function deleteParkingSpace(id: number): Promise<void> {
     if (idx < 0) throw toApiError({ response: { status: 404, data: { message: 'Parking space not found' } } });
     const space = fx.parkingSpaceResources[idx];
     const hasActiveTransaction = fx.transactions.some(
-      (t) => t.parking_space_id === id && (t.status === 'active' || t.status === 'overstay'),
+      (t) => t.parking_space_id === id && t.status === 'active',
     );
     const hasActiveBooking = fx.bookings.some(
       (b) => b.parking_space_id === id && (b.status === 'pending' || b.status === 'confirmed'),
