@@ -194,6 +194,7 @@ export default function CheckInScreen() {
     onSuccess: (txn) => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['active-vehicles'] });
+      qc.invalidateQueries({ queryKey: ['transaction-scope-count'] });
       qc.invalidateQueries({ queryKey: ['drivers'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       router.replace(`/transactions/${txn.id}`);

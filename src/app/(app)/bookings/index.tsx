@@ -439,7 +439,7 @@ export default function BookingsScreen() {
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel={isTablet ? 'Go to today' : 'Choose date'}
-            onPress={isTablet ? () => goToDate(new Date()) : openDatePicker}
+            onPress={isTablet ? () => goToDate(sydneyNowPickerDate()) : openDatePicker}
             style={styles.dateLabel}>
             <Text variant="subtitle" numberOfLines={1}>{formatNavDate(selectedDate)}</Text>
           </TouchableOpacity>

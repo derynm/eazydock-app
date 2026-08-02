@@ -282,6 +282,19 @@ export type DashboardDailyMovement = {
   car_out: number;
 };
 
+export type DashboardDailyParkingHours = {
+  date: string;
+  day: string;
+  is_operating_day: boolean;
+  active_bays: number;
+  operating_hours_per_bay: number;
+  total_capacity_minutes: number;
+  total_capacity_hours: number;
+  total_parked_minutes: number;
+  total_parked_hours: number;
+  occupancy_percentage: number;
+};
+
 export type DashboardVisitorTypeTrend = {
   date: string;
   label: string;
@@ -313,6 +326,7 @@ export type DashboardWeekOccupancy = {
     date_from: string;
     date_to: string;
     building_id: number | null;
+    parking_area_id: number | null;
   };
   summary: DashboardOccupancySnapshot;
   daily: DashboardOccupancySnapshot[];
@@ -322,7 +336,25 @@ export type DashboardWeekOccupancy = {
   };
 };
 
+export type DashboardWeekParkingHours = {
+  filters: {
+    date_from: string;
+    date_to: string;
+    building_id: number | null;
+    parking_area_id: number | null;
+  };
+  summary: {
+    total_parked_minutes: number;
+    total_parked_hours: number;
+  };
+  daily: DashboardDailyParkingHours[];
+};
+
 export type DashboardResponse = {
+  filters: {
+    building_id: number | null;
+    parking_area_id: number | null;
+  };
   metrics: DashboardMetrics;
   occupancy: DashboardOccupancy;
   active_vehicles: DashboardActiveVehicle[];
@@ -336,6 +368,7 @@ export type DashboardResponse = {
   weekly_movement_breakdown: DashboardBreakdown[];
   vehicle_breakdown: DashboardBreakdown[];
   previous_week_utilisation: DashboardDailyUtilisation[];
+  current_week_parking_hours: DashboardWeekParkingHours;
   this_week_occupancy: DashboardWeekOccupancy;
 };
 

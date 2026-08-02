@@ -521,7 +521,7 @@ function transactionsCsv(rows: Transaction[]): string {
  */
 export async function exportTransactions(format: ExportFormat, params: ListParams = {}): Promise<ExportResult> {
   const meta = EXPORT_META[format];
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = dateValueFromPicker(sydneyNowPickerDate());
 
   if (USE_FIXTURES) {
     const q = (params.search ?? '').toString().toLowerCase();

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 
 import type {
-  DashboardDailyMovement,
+  DashboardDailyParkingHours,
   DashboardMetrics,
   DashboardOccupancy,
 } from '@/api/types';
@@ -23,17 +23,17 @@ import { Text } from '@/components/ui';
 type Props = {
   metrics: DashboardMetrics;
   occupancy: DashboardOccupancy;
-  dailyMovement: DashboardDailyMovement[];
+  dailyParkingHours: DashboardDailyParkingHours[];
   ringSize: number;
 };
 
 const slides = [
-  { key: 'daily-movement', title: '7 days movement' },
+  { key: 'daily-occupancy', title: 'Weekly occupancy' },
   { key: 'movement', title: 'Today’s movement' },
   { key: 'occupancy', title: 'Occupancy' },
 ] as const;
 
-export function DashboardChartCarousel({ metrics, occupancy, dailyMovement, ringSize }: Props) {
+export function DashboardChartCarousel({ metrics, occupancy, dailyParkingHours, ringSize }: Props) {
   const theme = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   const [width, setWidth] = useState(0);
@@ -60,7 +60,7 @@ export function DashboardChartCarousel({ metrics, occupancy, dailyMovement, ring
         <Text variant="overline" color="textMuted">
           {slides[activeIndex]?.title ?? slides[0].title}
         </Text>
-        {activeIndex === 0 ? <MovementLegend /> : null}
+        {activeIndex === 0 ? <WeekEndingLabel daily={dailyParkingHours} /> : null}
       </View>
 
       <View style={[styles.viewport, { height: ringSize }]}>
@@ -74,7 +74,7 @@ export function DashboardChartCarousel({ metrics, occupancy, dailyMovement, ring
             onMomentumScrollEnd={onMomentumScrollEnd}
             scrollEventThrottle={16}>
             <View style={[styles.slide, { width }]}>
-              <DailyMovementChart daily={dailyMovement} />
+              <DailyOccupancyChart daily={dailyParkingHours} />
             </View>
 
             <View style={[styles.slide, { width }]}>
@@ -124,79 +124,66 @@ export function DashboardChartCarousel({ metrics, occupancy, dailyMovement, ring
   );
 }
 
-function MovementLegend() {
-  const theme = useTheme();
+function WeekEndingLabel({ daily }: { daily: DashboardDailyParkingHours[] }) {
+  const date = daily.reduce<string | null>(
+    (latest, day) => !latest || day.date > latest ? day.date : latest,
+    null,
+  );
 
   return (
-    <View style={styles.movementLegend}>
-      <View style={styles.movementLegendItem}>
-        <View style={[styles.movementLegendDot, { backgroundColor: theme.chartBar }]} />
-        <Text variant="caption" color="textMuted">In</Text>
-      </View>
-      <View style={styles.movementLegendItem}>
-        <View style={[styles.movementLegendDot, { backgroundColor: theme.chartBar, opacity: 0.42 }]} />
-        <Text variant="caption" color="textMuted">Out</Text>
-      </View>
-    </View>
+    <Text variant="caption" color="textMuted" style={styles.weekEndingLabel}>
+      Week ending{date ? ` ${formatDateDmy(date)}` : ''}
+    </Text>
   );
 }
 
-function DailyMovementChart({ daily }: { daily: DashboardDailyMovement[] }) {
+function DailyOccupancyChart({ daily }: { daily: DashboardDailyParkingHours[] }) {
   const theme = useTheme();
   const [pressedDate, setPressedDate] = useState<string | null>(null);
+  const operatingDays = daily.filter((day) => day.is_operating_day);
 
-  if (daily.length === 0) {
+  if (operatingDays.length === 0) {
     return (
       <View style={styles.weeklyEmpty}>
         <Text variant="body" color="textMuted">
-          No movement history available
+          No occupancy history available
         </Text>
       </View>
     );
   }
 
-  const maxMovement = Math.max(...daily.flatMap((day) => [day.car_in, day.car_out]), 1);
-
   return (
     <View
       accessibilityRole="summary"
-      accessibilityLabel={`Daily movement: ${daily
-        .map((day) => `${formatDayLabel(day.date)}, ${day.car_in} cars in and ${day.car_out} cars out`)
+      accessibilityLabel={`Daily occupancy: ${operatingDays
+        .map((day) => `${formatDayLabel(day.date)}, ${day.occupancy_percentage}%`)
         .join('; ')}`}
       style={styles.weeklyChart}>
-      <View style={[styles.weeklyPlot, { borderBottomColor: theme.borderStrong }]}>
-        {daily.map((day) => {
-          const carInHeight = day.car_in === 0 ? 3 : 12 + (day.car_in / maxMovement) * 58;
-          const carOutHeight = day.car_out === 0 ? 3 : 12 + (day.car_out / maxMovement) * 58;
+      <View style={styles.weeklyPlot}>
+        {operatingDays.map((day) => {
+          const percentage = Math.min(100, Math.max(0, day.occupancy_percentage));
 
           return (
             <Pressable
               key={day.date}
               accessibilityRole="button"
-              accessibilityLabel={`${formatDayLabel(day.date)}, ${day.car_in} cars in and ${day.car_out} cars out`}
-              accessibilityHint="Hold to show the movement counts"
+              accessibilityLabel={`${formatDayLabel(day.date)}, ${percentage}% occupancy`}
+              accessibilityHint="Hold to show the occupancy percentage"
               onPressIn={() => setPressedDate(day.date)}
               onPressOut={() => setPressedDate(null)}
               style={styles.movementDay}>
-              <MovementBar
-                value={day.car_in}
-                height={carInHeight}
+              <OccupancyBar
+                percentage={percentage}
                 visible={pressedDate === day.date}
                 color={theme.chartBar}
-              />
-              <MovementBar
-                value={day.car_out}
-                height={carOutHeight}
-                visible={pressedDate === day.date}
-                color={theme.chartBar}
-                muted
+                trackColor={theme.surfaceSunken}
               />
             </Pressable>
           );
         })}
       </View>
       <View style={styles.weeklyLabels}>
-        {daily.map((day) => (
+        {operatingDays.map((day) => (
           <Text
             key={day.date}
             variant="caption"
@@ -211,33 +198,34 @@ function DailyMovementChart({ daily }: { daily: DashboardDailyMovement[] }) {
   );
 }
 
-function MovementBar({
-  value,
-  height,
+function OccupancyBar({
+  percentage,
   visible,
   color,
-  muted = false,
+  trackColor,
 }: {
-  value: number;
-  height: number;
+  percentage: number;
   visible: boolean;
   color: string;
-  muted?: boolean;
+  trackColor: string;
 }) {
   return (
     <View style={styles.movementBarColumn}>
       <Text
         variant="label"
-        style={[styles.weeklyValue, !visible && styles.weeklyValueHidden]}
-        numberOfLines={1}>
-        {value}
+        style={[styles.weeklyValue, !visible && styles.weeklyValueHidden]}>
+        {percentage}%
       </Text>
-      <View
-        style={[
-          styles.movementBar,
-          { backgroundColor: color, height: `${height}%`, opacity: muted ? 0.42 : 1 },
-        ]}
-      />
+      <View style={[styles.occupancyBarTrack, { backgroundColor: trackColor }]}>
+        {percentage > 0 ? (
+          <View
+            style={[
+              styles.occupancyBarFill,
+              { backgroundColor: color, height: `${percentage}%` },
+            ]}
+          />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -246,6 +234,11 @@ function formatDayLabel(date: string) {
   const parsed = new Date(`${date}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return date;
   return new Intl.DateTimeFormat('en', { weekday: 'short' }).format(parsed);
+}
+
+function formatDateDmy(date: string) {
+  const [year, month, day] = date.split('-');
+  return year && month && day ? `${day}-${month}-${year}` : date;
 }
 
 function occupancyRingDataUri({
@@ -411,18 +404,17 @@ function ComparisonBar({
 const styles = StyleSheet.create({
   root: { gap: Spacing.md },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  weekEndingLabel: { fontSize: 10, lineHeight: 13 },
   viewport: { overflow: 'hidden' },
   slide: { height: '100%', justifyContent: 'space-between', paddingRight: 1 },
   occupancySlide: { justifyContent: 'center' },
   weeklyChart: { flex: 1, gap: 6 },
-  weeklyPlot: { flex: 1, flexDirection: 'row', alignItems: 'stretch', gap: Spacing.sm, paddingHorizontal: Spacing.xs, borderBottomWidth: StyleSheet.hairlineWidth },
+  weeklyPlot: { flex: 1, flexDirection: 'row', alignItems: 'stretch', gap: Spacing.sm, paddingHorizontal: Spacing.xs },
   movementDay: { flex: 1, minWidth: 0, height: '100%', flexDirection: 'row', alignItems: 'stretch', justifyContent: 'center', gap: 4 },
-  movementBarColumn: { flex: 1, maxWidth: 17, alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
-  movementBar: { width: '100%', minWidth: 5, minHeight: 3, borderTopLeftRadius: 5, borderTopRightRadius: 5 },
-  movementLegend: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  movementLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  movementLegendDot: { width: 8, height: 8, borderRadius: Radius.pill },
-  weeklyValue: { fontSize: 11, lineHeight: 14 },
+  movementBarColumn: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
+  occupancyBarTrack: { flex: 1, width: 17, justifyContent: 'flex-end', overflow: 'hidden', borderRadius: Radius.pill },
+  occupancyBarFill: { width: '100%', borderRadius: Radius.pill },
+  weeklyValue: { minWidth: 64, textAlign: 'center', fontSize: 11, lineHeight: 14 },
   weeklyValueHidden: { opacity: 0 },
   weeklyLabels: { flexDirection: 'row' },
   weeklyLabel: { flex: 1, minWidth: 0, textAlign: 'center', fontSize: 10, lineHeight: 13 },

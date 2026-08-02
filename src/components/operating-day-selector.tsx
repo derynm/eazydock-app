@@ -31,6 +31,7 @@ export function OperatingDaySelector({ value, onChange, error, disabled = false 
               accessibilityRole="checkbox"
               accessibilityState={{ checked: selected, disabled }}
               disabled={disabled}
+              hitSlop={4}
               onPress={() => onChange(selected ? value.filter((item) => item !== day) : ALL_OPERATING_DAYS.filter((item) => item === day || value.includes(item)))}
               style={({ pressed }) => [
                 styles.chip,
@@ -50,5 +51,5 @@ export function OperatingDaySelector({ value, onChange, error, disabled = false 
 const styles = StyleSheet.create({
   field: { gap: Spacing.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  chip: { minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.sm, borderWidth: 1, borderRadius: Radius.pill },
+  chip: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: Radius.pill },
 });

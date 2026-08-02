@@ -23,15 +23,13 @@ type Props = {
 
 export function Screen({ title, subtitle, subtitleLoading, headerRight, toolbar, onBack, compactHeader, children }: Props) {
   const theme = useTheme();
-  const { isTablet, openDrawer, collapsed, toggleCollapsed } = useShell();
+  const { isTablet, openDrawer } = useShell();
   const isCompact = compactHeader && !isTablet;
 
   const leading = onBack ? (
     <IconButton name="arrowLeft" accessibilityLabel="Back" onPress={onBack} color={theme.text} />
   ) : !isTablet ? (
     <IconButton name="menu" accessibilityLabel="Open menu" onPress={openDrawer} color={theme.text} />
-  ) : collapsed ? (
-    <IconButton name="sidebar" accessibilityLabel="Expand menu" onPress={toggleCollapsed} color={theme.textSecondary} />
   ) : null;
 
   return (

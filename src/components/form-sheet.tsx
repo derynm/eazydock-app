@@ -18,10 +18,11 @@ type Props = {
   submitLabel?: string;
   error?: string | null;
   hideCloseButton?: boolean;
+  tabletTall?: boolean;
   children: ReactNode;
 };
 
-export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitting, submitLabel = 'Save', error, hideCloseButton = false, children }: Props) {
+export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitting, submitLabel = 'Save', error, hideCloseButton = false, tabletTall = false, children }: Props) {
   const theme = useTheme();
   const { isTablet } = useResponsive();
   const scrollRef = useRef<ScrollView>(null);
@@ -33,7 +34,7 @@ export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitt
   }, [error]);
 
   const inner = (
-    <View style={[styles.card, { backgroundColor: theme.surface }, isTablet && styles.cardTablet, isTablet && (Shadow.lg as object)]}>
+    <View style={[styles.card, { backgroundColor: theme.surface }, isTablet && styles.cardTablet, isTablet && tabletTall && styles.cardTabletTall, isTablet && (Shadow.lg as object)]}>
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <View style={styles.flex}>
           <Text variant="subtitle" numberOfLines={1}>
@@ -48,7 +49,12 @@ export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitt
         {!hideCloseButton ? <IconButton name="close" accessibilityLabel="Close" onPress={onClose} color={theme.textSecondary} /> : null}
       </View>
 
-      <FormScrollView ref={scrollRef} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <FormScrollView
+        ref={scrollRef}
+        style={isTablet && tabletTall ? styles.bodyScroll : undefined}
+        contentContainerStyle={styles.body}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
         {error ? <Banner title="Couldn’t save" message={error} tone="danger" /> : null}
         {children}
       </FormScrollView>
@@ -69,11 +75,17 @@ export function FormSheet({ visible, onClose, title, subtitle, onSubmit, submitt
       onRequestClose={onClose}>
       <SafeAreaProvider style={styles.flex}>
         {isTablet ? (
-          <Pressable style={[styles.scrim, { backgroundColor: theme.scrim }]} onPress={onClose}>
-            <Pressable style={styles.tabletWrap} onPress={(e) => e.stopPropagation()}>
-              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>{inner}</KeyboardAvoidingView>
-            </Pressable>
-          </Pressable>
+          <View style={[styles.scrim, { backgroundColor: theme.scrim }]}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              accessibilityRole="button"
+              accessibilityLabel="Close form"
+              onPress={onClose}
+            />
+            <View style={[styles.tabletWrap, tabletTall && styles.tabletWrapTall]}>
+              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={tabletTall && styles.flex}>{inner}</KeyboardAvoidingView>
+            </View>
+          </View>
         ) : (
           <SafeAreaView style={[styles.fullSafe, { backgroundColor: theme.surface }]} edges={['top', 'bottom']}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
@@ -90,9 +102,12 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scrim: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
   tabletWrap: { width: '100%', maxWidth: 560 },
+  tabletWrapTall: { height: '88%', maxHeight: 720 },
   fullSafe: { flex: 1 },
   card: { flex: 1, overflow: 'hidden' },
   cardTablet: { flex: 0, maxHeight: '88%', borderRadius: Radius.lg },
+  cardTabletTall: { flex: 1, maxHeight: '100%' },
+  bodyScroll: { flex: 1 },
   header: {
     minHeight: 56,
     flexDirection: 'row',

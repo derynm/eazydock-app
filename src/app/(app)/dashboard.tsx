@@ -1,14 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { fetchDashboard } from '@/api/dashboard';
+import { lookupParkingAreas } from '@/api/lookups';
 import type { DashboardActiveVehicle } from '@/api/types';
 import { useActiveCompany, useSession } from '@/auth/session';
 import { Screen } from '@/components/screen';
-import { Banner, Card, Divider, Icon, Skeleton, Text, type IconName } from '@/components/ui';
+import { Banner, Card, Divider, Icon, Select, Skeleton, Text, type IconName } from '@/components/ui';
 import { Layout, Radius, Shadow, Spacing } from '@/constants/theme';
 import { DashboardChartCarousel } from '@/features/dashboard/dashboard-chart-carousel';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -28,10 +29,34 @@ export default function Dashboard() {
   const { user, activeCompanyId, selectedBuilding } = useSession();
   const { can } = usePermissions();
   const { width, isTablet } = useResponsive();
+  const buildingId = selectedBuilding?.id;
+  const [parkingAreaFilter, setParkingAreaFilter] = useState<{
+    companyId: number | null;
+    buildingId: number | undefined;
+    areaId: number | null;
+  }>({ companyId: activeCompanyId, buildingId, areaId: null });
+  const parkingAreaId = parkingAreaFilter.companyId === activeCompanyId &&
+    parkingAreaFilter.buildingId === buildingId
+    ? parkingAreaFilter.areaId
+    : null;
+
+  const { data: parkingAreas = [] } = useQuery({
+    queryKey: ['lookup-areas', buildingId],
+    queryFn: () => lookupParkingAreas(buildingId),
+    enabled: activeCompanyId !== null && buildingId !== undefined,
+  });
+  const parkingAreaOptions = [
+    { label: 'All parking areas', value: 0 },
+    ...parkingAreas.map((area) => ({ label: area.name, value: area.id })),
+  ];
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
-    queryKey: ['dashboard', activeCompanyId, selectedBuilding?.id],
-    queryFn: () => fetchDashboard(selectedBuilding?.id),
+    queryKey: ['dashboard', activeCompanyId, buildingId, parkingAreaId],
+    queryFn: () =>
+      fetchDashboard({
+        building_id: buildingId,
+        parking_area_id: parkingAreaId ?? undefined,
+      }),
     enabled: activeCompanyId !== null,
   });
 
@@ -90,6 +115,21 @@ export default function Dashboard() {
             colors={[theme.primary]}
           />
         }>
+        <View style={[styles.filterRow, !isTablet && styles.filterRowPhone]}>
+          <View style={[styles.filterField, !isTablet && styles.filterFieldPhone]}>
+            <Select
+              value={parkingAreaId ?? 0}
+              options={parkingAreaOptions}
+              onChange={(value) => setParkingAreaFilter({
+                companyId: activeCompanyId,
+                buildingId,
+                areaId: value || null,
+              })}
+              placeholder="All parking areas"
+            />
+          </View>
+        </View>
+
         {isError && !data ? (
           <Banner
             title="Couldn’t load dashboard"
@@ -147,7 +187,7 @@ export default function Dashboard() {
               <DashboardChartCarousel
                 metrics={metrics}
                 occupancy={data.occupancy}
-                dailyMovement={data.daily_movement_trend}
+                dailyParkingHours={data.current_week_parking_hours?.daily ?? []}
                 ringSize={isTablet ? 184 : width < 380 ? 120 : 130}
               />
             </Card>
@@ -198,6 +238,7 @@ export default function Dashboard() {
 
             <OnSitePanel
               vehicles={data.active_vehicles}
+              total={metrics.currently_inside}
               onSeeAll={() => router.push('/transactions')}
               onOpen={(id) => router.push(`/transactions/${id}`)}
               compact={!isTablet}
@@ -328,11 +369,13 @@ function QuickAction({
 
 function OnSitePanel({
   vehicles,
+  total,
   onSeeAll,
   onOpen,
   compact,
 }: {
   vehicles: DashboardActiveVehicle[];
+  total: number;
   onSeeAll: () => void;
   onOpen: (id: number) => void;
   compact: boolean;
@@ -345,7 +388,7 @@ function OnSitePanel({
           variant="overline"
           color="textSecondary"
           style={[styles.sectionTitle, compact && styles.onSiteTitleCompact]}>
-          On site now · {vehicles.length}
+          On site now · {total}
         </Text>
         <Pressable accessibilityRole="button" onPress={onSeeAll} hitSlop={8}>
           <Text variant="label" tint={theme.primary}>
@@ -361,7 +404,9 @@ function OnSitePanel({
             <Icon name="checkCircle" size={24} color={theme.success} />
           </View>
           <Text variant="body" color="textSecondary">
-            No vehicles currently on site.
+            {total === 0
+              ? 'No vehicles currently on site.'
+              : 'Vehicle preview is unavailable. Tap See all to view current activity.'}
           </Text>
         </View>
       ) : (
@@ -500,6 +545,13 @@ const styles = StyleSheet.create({
     gap: Spacing.xl,
   },
   contentPhone: { padding: Spacing.lg, gap: Spacing.md },
+  filterRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  filterRowPhone: { justifyContent: 'flex-start' },
+  filterField: { width: 360, maxWidth: '100%' },
+  filterFieldPhone: { flex: 1, width: '100%' },
   headerAvatar: {
     width: 36,
     height: 36,

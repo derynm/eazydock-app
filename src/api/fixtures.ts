@@ -363,49 +363,59 @@ export const incidents: Incident[] = Array.from({ length: 10 }).map((_, i) => {
 });
 
 /* ---- Dashboard ---- */
-export function dashboard(): DashboardResponse {
-  const activeVehicles = [transactions[0], transactions[2]].map((transaction) => {
-    const parkedMinutes = Math.max(
-      0,
-      Math.floor((now - new Date(transaction.car_in_at ?? now).getTime()) / 60_000),
-    );
-    const vehicle = vehicles.find((item) => item.id === transaction.vehicle_id);
-    const tenant = tenants.find((item) => item.id === transaction.tenant_id);
+export function dashboard(params: { building_id?: number; parking_area_id?: number } = {}): DashboardResponse {
+  const activeVehicles = [transactions[0], transactions[2]]
+    .filter(
+      (transaction) =>
+        (!params.building_id || transaction.building_id === params.building_id) &&
+        (!params.parking_area_id || transaction.parking_area_id === params.parking_area_id),
+    )
+    .map((transaction) => {
+      const parkedMinutes = Math.max(
+        0,
+        Math.floor((now - new Date(transaction.car_in_at ?? now).getTime()) / 60_000),
+      );
+      const vehicle = vehicles.find((item) => item.id === transaction.vehicle_id);
+      const tenant = tenants.find((item) => item.id === transaction.tenant_id);
 
-    return {
-      id: transaction.id,
-      transaction_no: transaction.transaction_no,
-      status: 'active' as const,
-      driver_type: transaction.driver_type,
-      building_id: transaction.building_id,
-      parking_area_id: transaction.parking_area_id,
-      parking_space_id: transaction.parking_space_id,
-      tenant_id: transaction.tenant_id,
-      driver_id: transaction.driver_id,
-      vehicle_id: transaction.vehicle_id,
-      transaction_date: transaction.transaction_date,
-      car_in_at: transaction.car_in_at ?? new Date(now).toISOString(),
-      car_out_at: null,
-      duration_minutes: null,
-      parked_duration_minutes: parkedMinutes,
-      parked_duration_label: durationLabel(parkedMinutes),
-      effective_duration_minutes: parkedMinutes,
-      parking_time_limit_minutes: transaction.parking_time_limit_minutes,
-      overstay_minutes: transaction.overstay_minutes,
-      is_overstay: transaction.is_overstay,
-      comments: transaction.comments,
-      tenant_snapshot: tenant ? { id: tenant.id, name: tenant.name } : null,
-      created_at: transaction.created_at,
-      parking_area: transaction.parking_area ?? null,
-      parking_space: transaction.parking_space ?? null,
-      vehicle: vehicle
-        ? { id: vehicle.id, plate_number: vehicle.plate_number, plate_state: vehicle.plate_state }
-        : null,
-      events: transaction.events ?? [],
-    };
-  });
+      return {
+        id: transaction.id,
+        transaction_no: transaction.transaction_no,
+        status: 'active' as const,
+        driver_type: transaction.driver_type,
+        building_id: transaction.building_id,
+        parking_area_id: transaction.parking_area_id,
+        parking_space_id: transaction.parking_space_id,
+        tenant_id: transaction.tenant_id,
+        driver_id: transaction.driver_id,
+        vehicle_id: transaction.vehicle_id,
+        transaction_date: transaction.transaction_date,
+        car_in_at: transaction.car_in_at ?? new Date(now).toISOString(),
+        car_out_at: null,
+        duration_minutes: null,
+        parked_duration_minutes: parkedMinutes,
+        parked_duration_label: durationLabel(parkedMinutes),
+        effective_duration_minutes: parkedMinutes,
+        parking_time_limit_minutes: transaction.parking_time_limit_minutes,
+        overstay_minutes: transaction.overstay_minutes,
+        is_overstay: transaction.is_overstay,
+        comments: transaction.comments,
+        tenant_snapshot: tenant ? { id: tenant.id, name: tenant.name } : null,
+        created_at: transaction.created_at,
+        parking_area: transaction.parking_area ?? null,
+        parking_space: transaction.parking_space ?? null,
+        vehicle: vehicle
+          ? { id: vehicle.id, plate_number: vehicle.plate_number, plate_state: vehicle.plate_state }
+          : null,
+        events: transaction.events ?? [],
+      };
+    });
 
   return {
+    filters: {
+      building_id: params.building_id ?? null,
+      parking_area_id: params.parking_area_id ?? null,
+    },
     metrics: {
       buildings: 1,
       tenants: 4,
@@ -461,11 +471,33 @@ export function dashboard(): DashboardResponse {
     ],
     vehicle_breakdown: [],
     previous_week_utilisation: [],
+    current_week_parking_hours: {
+      filters: {
+        date_from: '2026-07-27',
+        date_to: '2026-08-02',
+        building_id: params.building_id ?? null,
+        parking_area_id: params.parking_area_id ?? null,
+      },
+      summary: {
+        total_parked_minutes: 36540,
+        total_parked_hours: 609,
+      },
+      daily: [
+        { date: '2026-07-27', day: 'Monday', is_operating_day: true, active_bays: 14, operating_hours_per_bay: 10, total_capacity_minutes: 8400, total_capacity_hours: 140, total_parked_minutes: 5100, total_parked_hours: 85, occupancy_percentage: 60.7 },
+        { date: '2026-07-28', day: 'Tuesday', is_operating_day: true, active_bays: 14, operating_hours_per_bay: 10, total_capacity_minutes: 8400, total_capacity_hours: 140, total_parked_minutes: 7380, total_parked_hours: 123, occupancy_percentage: 87.9 },
+        { date: '2026-07-29', day: 'Wednesday', is_operating_day: true, active_bays: 14, operating_hours_per_bay: 10, total_capacity_minutes: 8400, total_capacity_hours: 140, total_parked_minutes: 5520, total_parked_hours: 92, occupancy_percentage: 65.7 },
+        { date: '2026-07-30', day: 'Thursday', is_operating_day: true, active_bays: 14, operating_hours_per_bay: 10, total_capacity_minutes: 8400, total_capacity_hours: 140, total_parked_minutes: 5700, total_parked_hours: 95, occupancy_percentage: 67.9 },
+        { date: '2026-07-31', day: 'Friday', is_operating_day: true, active_bays: 14, operating_hours_per_bay: 10, total_capacity_minutes: 8400, total_capacity_hours: 140, total_parked_minutes: 4740, total_parked_hours: 79, occupancy_percentage: 56.4 },
+        { date: '2026-08-01', day: 'Saturday', is_operating_day: true, active_bays: 14, operating_hours_per_bay: 10, total_capacity_minutes: 8400, total_capacity_hours: 140, total_parked_minutes: 8100, total_parked_hours: 135, occupancy_percentage: 96.4 },
+        { date: '2026-08-02', day: 'Sunday', is_operating_day: false, active_bays: 14, operating_hours_per_bay: 0, total_capacity_minutes: 0, total_capacity_hours: 0, total_parked_minutes: 0, total_parked_hours: 0, occupancy_percentage: 0 },
+      ],
+    },
     this_week_occupancy: {
       filters: {
         date_from: '2026-07-27',
         date_to: '2026-08-01',
         building_id: 1,
+        parking_area_id: params.parking_area_id ?? null,
       },
       summary: {
         date: '2026-08-01',

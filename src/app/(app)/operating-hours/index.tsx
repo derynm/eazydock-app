@@ -12,13 +12,13 @@ import { useSession } from '@/auth/session';
 import { FormSheet } from '@/components/form-sheet';
 import { OperatingDaySelector } from '@/components/operating-day-selector';
 import { Screen } from '@/components/screen';
-import { Badge, Banner, Card, EmptyState, Icon, IconButton, Select, Skeleton, Text, TextField, TimeField } from '@/components/ui';
+import { Badge, Banner, Card, EmptyState, Icon, PressableCard, Select, Skeleton, Text, TextField, TimeField } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useResponsive } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { statusMeta } from '@/lib/status';
 import { formatOperatingDays, formatOperatingHours, normalizeOperatingDays } from '@/lib/operating-schedule';
+import { statusMeta } from '@/lib/status';
 import { zodResolver } from '@/lib/zod-resolver';
 
 export default function OperatingHoursScreen() {
@@ -49,8 +49,8 @@ export default function OperatingHoursScreen() {
 
   if (!canView) {
     return (
-      <Screen title="Operating Hours">
-        <EmptyState tone="error" title="You do not have access to Operating Hours" />
+      <Screen title="Operating Schedule">
+        <EmptyState tone="error" title="You do not have access to Operating Schedule" />
       </Screen>
     );
   }
@@ -62,7 +62,7 @@ export default function OperatingHoursScreen() {
   const areas = hoursQuery.data?.data ?? [];
 
   return (
-    <Screen title="Operating Hours">
+    <Screen title="Operating Schedule">
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -74,9 +74,6 @@ export default function OperatingHoursScreen() {
           />
         }>
         <View style={styles.intro}>
-          <Text variant="body" color="textSecondary">
-            Set counted hours and optional overstay limits by Parking Area.
-          </Text>
           <Select
             label="Building / Site"
             value={buildingId ?? 0}
@@ -88,12 +85,12 @@ export default function OperatingHoursScreen() {
             disabled={buildingsQuery.isLoading}
           />
           {successCompanyId === activeCompanyId ? (
-            <Banner tone="success" icon="checkCircle" title="Operating hours updated successfully." />
+            <Banner tone="success" icon="checkCircle" title="Operating schedule updated successfully." />
           ) : null}
           {hoursQuery.isError && areas.length > 0 ? (
             <Banner
               tone="warning"
-              title="Couldn’t refresh Operating Hours"
+              title="Couldn’t refresh Operating Schedule"
               message="Showing the most recently loaded settings."
               actionLabel="Retry"
               onAction={hoursQuery.refetch}
@@ -114,7 +111,7 @@ export default function OperatingHoursScreen() {
         ) : hoursQuery.isError && areas.length === 0 ? (
           <EmptyState
             tone="error"
-            title="Couldn’t load Operating Hours"
+            title="Couldn’t load Operating Schedule"
             description={hoursQuery.error?.message}
             actionLabel="Retry"
             onAction={hoursQuery.refetch}
@@ -176,7 +173,12 @@ function OperatingHoursCard({
     : `${area.effective_parking_time_limit_minutes} minutes`;
 
   return (
-    <Card style={[styles.card, tablet && styles.cardTablet]}>
+    <PressableCard
+      style={[styles.card, tablet && styles.cardTablet]}
+      disabled={!editable}
+      accessibilityRole={editable ? 'button' : undefined}
+      accessibilityLabel={editable ? `Edit operating schedule for ${area.name}` : undefined}
+      onPress={editable ? onEdit : undefined}>
       <View style={styles.cardHeader}>
         <View style={[styles.areaIcon, { backgroundColor: theme.primarySoft }]}>
           <Icon name="clock" size={22} color={theme.primary} />
@@ -190,7 +192,6 @@ function OperatingHoursCard({
         <View style={styles.cardActions}>
           <Badge label={area.inherits_building_operating_schedule ? 'Building schedule' : 'Custom schedule'} tone={area.inherits_building_operating_schedule ? 'primary' : 'neutral'} size="sm" />
           <Badge label={status.label} tone={status.tone} size="sm" dot />
-          {editable ? <IconButton name="edit" size={18} accessibilityLabel={`Edit ${area.name}`} surface onPress={onEdit} /> : null}
         </View>
       </View>
 
@@ -205,7 +206,7 @@ function OperatingHoursCard({
           <CompactDetail label="Limit" value={limit} />
         </View>
       </View>
-    </Card>
+    </PressableCard>
   );
 }
 
@@ -213,7 +214,7 @@ function CompactDetail({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.compactDetailRow}>
       <Text variant="caption" color="textMuted">{label}</Text>
-      <Text variant="bodyStrong" numberOfLines={1} style={styles.detailValue}>{value}</Text>
+      <Text variant="label" numberOfLines={1} style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
@@ -281,12 +282,13 @@ function OperatingHoursEditor({
     <FormSheet
       visible={area !== null}
       onClose={closeWithoutSaving}
-      title="Edit Operating Hours"
+      title="Edit Operating Schedule"
       subtitle={area ? `${area.building.name} · ${area.name}` : undefined}
       onSubmit={handleSubmit((form) => mutation.mutate(form))}
       submitting={mutation.isPending}
       submitLabel="Save"
       hideCloseButton
+      tabletTall
       error={topError}>
       <View style={[styles.editorSection, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
         <Text variant="overline" color="textMuted">Schedule source</Text>

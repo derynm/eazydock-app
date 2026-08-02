@@ -29,6 +29,7 @@ export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () =>
     qc.invalidateQueries({ queryKey: ['bookings'] });
     qc.invalidateQueries({ queryKey: ['transactions'] });
     qc.invalidateQueries({ queryKey: ['active-vehicles'] });
+    qc.invalidateQueries({ queryKey: ['transaction-scope-count'] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     onChanged?.();
   };

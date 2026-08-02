@@ -1,6 +1,6 @@
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { toApiError } from '@/api/client';
@@ -39,7 +39,7 @@ import { confirm } from '@/lib/confirm';
 import { durationSince, formatDuration, formatPlate } from '@/lib/format';
 import { DRIVER_TYPES } from '@/lib/options';
 import { transactionStatusMeta } from '@/lib/status';
-import { dateValueFromPicker, instantFromSydneyDateTimeValue, sydneyNowPickerDate } from '@/lib/sydney-time';
+import { dateValueFromPicker, instantFromSydneyDateTimeValue, sydneyNowPickerDate, toSydneyDateTimeValue } from '@/lib/sydney-time';
 
 const SCOPES = [
   { value: 'all', label: 'All' },
@@ -61,11 +61,10 @@ function dateAndTime(value: string, time: string, endOfDay: boolean): string {
   return instantFromSydneyDateTimeValue(`${value}T${clock}:${endOfDay ? '59' : '00'}`)?.toISOString() ?? '';
 }
 
-function toLocalTime(value: string): string {
+function toSydneyTime(value: string): string {
   if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const match = toSydneyDateTimeValue(value).match(/T(\d{2}:\d{2})$/);
+  return match?.[1] ?? '';
 }
 
 function TransactionCard({ transaction, onPress }: { transaction: Transaction; onPress: () => void }) {
@@ -141,12 +140,18 @@ export default function TransactionsScreen() {
   const theme = useTheme();
   const { can } = usePermissions();
   const { isTablet } = useResponsive();
+  const { activeCompanyId, selectedBuilding } = useSession();
+  const buildingId = selectedBuilding?.id;
   const [scope, setScope] = useState<TransactionScope>('all');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [showExport, setShowExport] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
-  const [areaId, setAreaId] = useState<number | null>(null);
+  const [areaSelection, setAreaSelection] = useState<{
+    companyId: number | null;
+    buildingId: number | undefined;
+    areaId: number | null;
+  }>({ companyId: activeCompanyId, buildingId, areaId: null });
   const [driverType, setDriverType] = useState('');
   const [dateMode, setDateMode] = useState<DateMode>('today');
   const [todayTimeFrom, setTodayTimeFrom] = useState('');
@@ -154,12 +159,14 @@ export default function TransactionsScreen() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const debounced = useDebouncedValue(search);
-  const { selectedBuilding } = useSession();
+  const areaId = areaSelection.companyId === activeCompanyId && areaSelection.buildingId === buildingId
+    ? areaSelection.areaId
+    : null;
   const today = dateValueFromPicker(sydneyNowPickerDate());
 
   const commonParams = {
     search: debounced || undefined,
-    building_id: selectedBuilding?.id,
+    building_id: buildingId,
     parking_area_id: areaId || undefined,
     driver_type: driverType || undefined,
   };
@@ -190,8 +197,8 @@ export default function TransactionsScreen() {
   };
   const fetcher = fetcherForScope(scope);
   const baseKey = scope === 'active'
-    ? ['active-vehicles', selectedBuilding?.id]
-    : ['transactions', selectedBuilding?.id];
+    ? ['active-vehicles', buildingId]
+    : ['transactions', buildingId];
   const list = usePaginatedList(
     baseKey,
     fetcher,
@@ -199,19 +206,32 @@ export default function TransactionsScreen() {
   );
   const scopeCountQueries = useQueries({
     queries: SCOPES.map((option) => ({
-      queryKey: ['transaction-scope-count', option.value, selectedBuilding?.id, paramsForScope(option.value)],
-      queryFn: () => fetcherForScope(option.value)({ page: 1, ...paramsForScope(option.value) }),
+      queryKey: ['transaction-scope-count', option.value, activeCompanyId, buildingId, paramsForScope(option.value)],
+      queryFn: () => fetcherForScope(option.value)({ page: 1, per_page: 1, ...paramsForScope(option.value) }),
       enabled: option.value !== scope,
     })),
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      const currentScopeKey = scope === 'active'
+        ? ['active-vehicles', buildingId]
+        : ['transactions', buildingId];
+      void Promise.all([
+        qc.refetchQueries({ queryKey: currentScopeKey, type: 'active' }),
+        qc.refetchQueries({ queryKey: ['transaction-scope-count'], type: 'active' }),
+      ]);
+    }, [buildingId, qc, scope]),
+  );
+
   const countForScope = (targetScope: TransactionScope) => {
     if (targetScope === scope) return list.total;
     const index = SCOPES.findIndex((option) => option.value === targetScope);
     return scopeCountQueries[index]?.data?.meta.total;
   };
   const { data: areas = [] } = useQuery({
-    queryKey: ['lookup-areas', selectedBuilding?.id],
-    queryFn: () => lookupParkingAreas(selectedBuilding?.id),
+    queryKey: ['lookup-areas', activeCompanyId, buildingId],
+    queryFn: () => lookupParkingAreas(buildingId),
   });
   const areaOptions = [{ label: 'All areas', value: 0 }, ...areas.map((area) => ({ label: area.name, value: area.id }))];
   const driverTypeOptions = [{ label: 'All driver types', value: '' }, ...DRIVER_TYPES];
@@ -388,7 +408,11 @@ export default function TransactionsScreen() {
         <Select
           value={areaId ?? 0}
           options={areaOptions}
-          onChange={(value) => setAreaId((value as number) || null)}
+          onChange={(value) => setAreaSelection({
+            companyId: activeCompanyId,
+            buildingId,
+            areaId: (value as number) || null,
+          })}
           placeholder="All areas"
         />
         <Select
@@ -404,8 +428,8 @@ export default function TransactionsScreen() {
             onChange={(value) => {
               const nextMode = value as DateMode;
               if (nextMode === 'today') {
-                setTodayTimeFrom(toLocalTime(dateFrom));
-                setTodayTimeTo(toLocalTime(dateTo));
+                setTodayTimeFrom(toSydneyTime(dateFrom));
+                setTodayTimeTo(toSydneyTime(dateTo));
               } else {
                 setDateFrom(todayTimeFrom ? dateAndTime(today, todayTimeFrom, false) : '');
                 setDateTo(todayTimeTo ? dateAndTime(today, todayTimeTo, true) : '');

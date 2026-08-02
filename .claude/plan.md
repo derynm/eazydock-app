@@ -283,7 +283,7 @@ two layouts share logic and only differ in presentation.
 | Screen | Reads | Writes / actions |
 |---|---|---|
 | **Login** | — | `POST /auth/login` (email + password) |
-| **Dashboard** | `GET /admin/dashboard` | — (KPIs, occupancy, quick links) |
+| **Dashboard** | `GET /admin/dashboard?building_id=&parking_area_id=` | — (KPIs, occupancy, quick links) |
 | **Transactions · list** | `GET /admin/transactions`, `/active-vehicles` | filter active/all, search |
 | **Transactions · detail** | `GET /admin/transactions/{id}` | check-out, change-space, cancel (`correct`/`mark-overstay` are a later pass) |
 | **Check-in** | `plate-lookup` (prefill on full plate), `vehicle-search`/`car-search`/`driver-search`, lookups | `POST /admin/transactions/check-in` — optional photo; **driver: pick existing (search) or type a new name → auto-created**; new car make/model/colour saved too |
@@ -368,7 +368,7 @@ two layouts share logic and only differ in presentation.
 
 | Method · Path | Notes |
 |---|---|
-| `GET /admin/dashboard` | `{ metrics: {...}, active_vehicles: { data:[…] } }`. `metrics` keys: `buildings, tenants, areas, total_spaces, active_spaces, occupied_spaces, available_spaces, occupancy_percentage, currently_inside, visitor_inside, delivery_inside, today_transactions, today_checkouts, overstay_alerts, open_overstay_incidents, plate_review_required, flexible_allocation_{quota,used,usage_percentage}`. Needs `dashboard,view`. |
+| `GET /admin/dashboard?building_id=&parking_area_id=` | `{ metrics: {...}, active_vehicles: { data:[…] } }`. `metrics` keys: `buildings, tenants, areas, total_spaces, active_spaces, occupied_spaces, available_spaces, occupancy_percentage, currently_inside, visitor_inside, delivery_inside, today_transactions, today_checkouts, overstay_alerts, open_overstay_incidents, plate_review_required, flexible_allocation_{quota,used,usage_percentage}`. Needs `dashboard,view`. |
 | `GET /admin/lookups/buildings` | `{ buildings: [{ id, name }] }` |
 | `GET /admin/lookups/parking-areas?building_id=` | `{ parking_areas: [{ id, building_id, name }] }` |
 | `GET /admin/lookups/parking-spaces?parking_area_id=&available_only=1` | `{ parking_spaces: [{ id, building_id, parking_area_id, space_code, occupancy_status }] }` |

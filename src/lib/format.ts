@@ -1,5 +1,7 @@
 /** Display helpers — dates, durations, plates, enum labels. */
 
+import { toSydneyDateTimeValue } from '@/lib/sydney-time';
+
 export function titleCase(value?: string | null): string {
   if (!value) return '';
   return value
@@ -13,23 +15,31 @@ export function formatPlate(plate?: string | null): string {
 
 const dtf = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, opts);
 
+function displayDate(value: string): Date {
+  const normalized = toSydneyDateTimeValue(value);
+  // Date-only and timezone-free values are Sydney wall-clock values. Build a
+  // local Date with the same visible fields so Intl cannot shift them using
+  // the device timezone after normalization.
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(normalized) ? `${normalized}T00:00:00` : normalized);
+}
+
 export function formatDate(iso?: string | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
+  const d = displayDate(iso);
   if (isNaN(d.getTime())) return '—';
   return dtf({ day: 'numeric', month: 'short', year: 'numeric' }).format(d);
 }
 
 export function formatDateTime(iso?: string | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
+  const d = displayDate(iso);
   if (isNaN(d.getTime())) return '—';
   return dtf({ day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d);
 }
 
 export function formatTime(iso?: string | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
+  const d = displayDate(iso);
   if (isNaN(d.getTime())) return '—';
   return dtf({ hour: '2-digit', minute: '2-digit' }).format(d);
 }
