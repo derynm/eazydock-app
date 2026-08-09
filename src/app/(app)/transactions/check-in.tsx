@@ -119,6 +119,7 @@ export default function CheckInScreen() {
       setValue('parking_space_id', null);
       setValue('tenant_id', p.tenantId ?? null);
       setValue('driver_id', p.driverId ?? null);
+      setValue('driver_phone', p.driverPhone ?? '');
       setDriverText(p.driverId ? (p.driverName ?? `Driver #${p.driverId}`) : '');
       setDriverCompany(p.driverCompanyName ?? '');
       const priorVisit = p.recentVisits.find((v) => v.id !== p.activeTransaction?.id);
@@ -141,6 +142,7 @@ export default function CheckInScreen() {
     setValue('vehicle_colour', '');
     setValue('tenant_id', null);
     setValue('driver_id', null);
+    setValue('driver_phone', '');
     setVehicleType(undefined);
     setDriverText('');
     setDriverCompany('');
@@ -363,10 +365,17 @@ export default function CheckInScreen() {
                 if (driverId) setValue('driver_id', null);
               }}
               search={async (q) =>
-                (await searchDrivers(q)).map((d) => ({ id: d.id, label: d.full_name, hint: d.company_name ?? d.phone ?? undefined }))
+                (await searchDrivers(q)).map((d) => ({
+                  id: d.id,
+                  label: d.full_name,
+                  hint: d.company_name ?? d.phone ?? undefined,
+                  data: { phone: d.phone, companyName: d.company_name },
+                }))
               }
               onSelect={(item) => {
                 setDriverText(item.label);
+                setValue('driver_phone', item.data?.phone ?? '');
+                setDriverCompany(item.data?.companyName ?? '');
                 setValue('driver_id', item.id);
               }}
             />
