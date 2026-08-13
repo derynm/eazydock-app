@@ -41,7 +41,7 @@ export function formatTime(iso?: string | null): string {
   if (!iso) return '—';
   const d = displayDate(iso);
   if (isNaN(d.getTime())) return '—';
-  return dtf({ hour: '2-digit', minute: '2-digit' }).format(d);
+  return dtf({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
 }
 
 /** "2h 14m" from a minute count. */

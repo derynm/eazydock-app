@@ -51,6 +51,11 @@ const ICONS = {
   card: { ios: 'creditcard.fill', other: 'credit_card' },
   tag: { ios: 'tag.fill', other: 'sell' },
   building: { ios: 'building.2.fill', other: 'apartment' },
+  buildingOwner: { ios: 'building.2.fill', other: 'domain' },
+  tenantDriver: { ios: 'person.crop.square.fill', other: 'badge' },
+  contractor: { ios: 'wrench.and.screwdriver.fill', other: 'construction' },
+  visitor: { ios: 'person.fill', other: 'person' },
+  delivery: { ios: 'truck.box.fill', other: 'local_shipping' },
 
   edit: { ios: 'pencil', other: 'edit' },
   trash: { ios: 'trash.fill', other: 'delete' },

@@ -38,6 +38,7 @@ export type PlateProfile = {
   vehicleStatus?: EntityStatus;
   driverId?: number | null;
   driverName?: string;
+  driverPhone?: string | null;
   driverCompanyName?: string | null;
   tenantId?: number | null;
   tenantName?: string;
@@ -76,6 +77,7 @@ export async function lookupPlate(plate: string): Promise<PlateProfile> {
         vehicleStatus: vehicle.status,
         driverId: suggestedDriver?.id ?? null,
         driverName: suggestedDriver?.full_name,
+        driverPhone: suggestedDriver?.phone ?? null,
         driverCompanyName: suggestedDriver?.company_name ?? null,
         tenantId: last?.tenant_id ?? null,
         tenantName: last?.tenant?.name ?? last?.tenant_snapshot?.name ?? undefined,
@@ -160,6 +162,7 @@ export async function lookupPlate(plate: string): Promise<PlateProfile> {
     vehicleStatus: data.vehicle.status,
     driverId: data.prefill?.suggested_driver?.id ?? null,
     driverName: data.prefill?.suggested_driver?.full_name,
+    driverPhone: data.prefill?.suggested_driver?.phone ?? null,
     driverCompanyName: data.prefill?.suggested_driver?.company_name ?? null,
     tenantId: data.prefill?.last_tenant_id ?? null,
     tenantName: data.prefill?.last_tenant?.name,

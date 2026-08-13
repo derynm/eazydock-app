@@ -144,12 +144,12 @@ export default function Dashboard() {
           <DashboardLoading />
         ) : data && metrics ? (
           <>
-            <View style={styles.kpiRow}>
+            <View style={[styles.kpiRow, !isTablet && styles.kpiRowCompact]}>
               <DashboardKpi
                 icon="transactions"
                 value={metrics.currently_inside}
                 label="Currently inside"
-                hint={`${metrics.visitor_inside} ${metrics.visitor_inside === 1 ? 'visitor' : 'visitors'} · ${metrics.delivery_inside} ${metrics.delivery_inside === 1 ? 'delivery' : 'deliveries'}`}
+                hint={`${metrics.currently_inside} vehicles`}
                 color={theme.primary}
                 softColor={theme.primarySoft}
                 compact={!isTablet}
@@ -255,6 +255,7 @@ function DashboardKpi({
   value,
   label,
   hint,
+  breakdown,
   color,
   softColor,
   compact,
@@ -263,44 +264,84 @@ function DashboardKpi({
   icon: IconName;
   value: string | number;
   label: string;
-  hint: string;
+  hint?: string;
+  breakdown?: { label: string; icon: IconName; value: number }[];
   color: string;
   softColor: string;
   compact: boolean;
   weight: number;
 }) {
+  const theme = useTheme();
+  const detailLabel = breakdown
+    ? breakdown.map((item) => `${item.value} ${item.label}`).join(', ')
+    : hint;
+
   return (
     <Card
-      accessibilityLabel={`${label}: ${value}. ${hint}`}
+      accessibilityLabel={`${label}: ${value}.${detailLabel ? ` ${detailLabel}` : ''}`}
       style={[
         styles.dashboardCard,
         styles.kpiCard,
         compact && styles.kpiCardCompact,
-        { flex: weight },
+        { flex: compact ? 1 : weight },
         Shadow.xs as object,
       ]}>
-      <View style={[styles.kpiIcon, compact && styles.kpiIconCompact, { backgroundColor: softColor }]}>
-        <Icon name={icon} size={compact ? 19 : 23} color={color} />
+      <View style={styles.kpiHeading}>
+        <Text
+          variant="display"
+          style={[styles.kpiValue, compact && styles.kpiValueCompact]}
+          adjustsFontSizeToFit
+          minimumFontScale={0.85}
+          numberOfLines={1}>
+          {value}
+        </Text>
+        <View
+          style={[
+            styles.kpiIcon,
+            compact && styles.kpiIconCompact,
+            { backgroundColor: softColor },
+          ]}>
+          <Icon name={icon} size={compact ? 19 : 23} color={color} />
+        </View>
       </View>
-      <Text
-        variant="display"
-        style={[styles.kpiValue, compact && styles.kpiValueCompact]}
-        numberOfLines={1}>
-        {value}
-      </Text>
-      <Text
-        variant="label"
-        style={[styles.kpiLabel, compact && styles.kpiLabelCompact]}
-        numberOfLines={1}>
-        {label}
-      </Text>
-      <Text
-        variant="caption"
-        color="textSecondary"
-        style={compact && styles.kpiHintCompact}
-        numberOfLines={compact ? 2 : 1}>
-        {hint}
-      </Text>
+      <View style={styles.kpiDetails}>
+        <Text
+          variant="label"
+          style={[styles.kpiLabel, compact && styles.kpiLabelCompact]}
+          numberOfLines={1}>
+          {label}
+        </Text>
+        {breakdown ? (
+          <View style={[styles.kpiBreakdown, compact && styles.kpiBreakdownCompact]}>
+            {breakdown.map((item) => (
+              <View
+                key={item.label}
+                accessible={false}
+                style={[styles.kpiBreakdownItem, compact && styles.kpiBreakdownItemCompact]}>
+                <Icon
+                  name={item.icon}
+                  size={compact ? 11 : 13}
+                  color={theme.textSecondary}
+                />
+                <Text
+                  variant="caption"
+                  color="textSecondary"
+                  style={compact && styles.kpiBreakdownValueCompact}>
+                  {item.value}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text
+            variant="caption"
+            color="textSecondary"
+            style={compact && styles.kpiHintCompact}
+            numberOfLines={compact ? 2 : 1}>
+            {hint}
+          </Text>
+        )}
+      </View>
       <Image
         pointerEvents="none"
         source={{ uri: accentDataUri(softColor) }}
@@ -510,13 +551,17 @@ function OnSiteRow({
 function DashboardLoading() {
   return (
     <>
-      <View style={styles.kpiRow}>
+      <View style={[styles.kpiRow, styles.kpiRowCompact]}>
         {Array.from({ length: 3 }).map((_, index) => (
           <Card key={index} style={[styles.kpiCard, styles.kpiCardCompact]}>
-            <Skeleton width={36} height={36} radius={Radius.md} />
-            <Skeleton width="65%" height={30} />
-            <Skeleton width="85%" height={14} />
-            <Skeleton width="70%" height={11} />
+            <View style={styles.kpiHeading}>
+              <Skeleton width="55%" height={30} />
+              <Skeleton width={34} height={34} radius={Radius.md} />
+            </View>
+            <View style={styles.kpiDetails}>
+              <Skeleton width="85%" height={14} />
+              <Skeleton width="70%" height={11} />
+            </View>
           </Card>
         ))}
       </View>
@@ -563,6 +608,7 @@ const styles = StyleSheet.create({
   headerAvatarPressed: { opacity: 0.7 },
   dashboardCard: { borderWidth: 1 },
   kpiRow: { flexDirection: 'row', alignItems: 'stretch', gap: Spacing.sm },
+  kpiRowCompact: { gap: 6 },
   kpiCard: {
     flex: 1,
     minWidth: 0,
@@ -571,25 +617,53 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xl,
   },
   kpiCardCompact: {
-    minHeight: 166,
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
-    paddingBottom: 20,
+    minHeight: 136,
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 18,
   },
+  kpiHeading: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.xs,
+  },
+  kpiDetails: { width: '100%', gap: Spacing.xs },
   kpiIcon: {
     width: 46,
     height: 46,
     borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.md,
+    flexShrink: 0,
   },
-  kpiIconCompact: { width: 36, height: 36, marginBottom: 6 },
-  kpiValue: { fontSize: 36, lineHeight: 40 },
-  kpiValueCompact: { fontSize: 28, lineHeight: 31 },
+  kpiIconCompact: { width: 34, height: 34 },
+  kpiValue: { minWidth: 0, flexShrink: 1, fontSize: 36, lineHeight: 40 },
+  kpiValueCompact: { fontSize: 24, lineHeight: 28 },
   kpiLabel: { fontSize: 15, lineHeight: 19 },
-  kpiLabelCompact: { fontSize: 12, lineHeight: 16 },
-  kpiHintCompact: { minHeight: 32, marginTop: 2 },
+  kpiLabelCompact: { fontSize: 11, lineHeight: 15 },
+  kpiHintCompact: { minHeight: 16, marginTop: 0 },
+  kpiBreakdown: {
+    minHeight: 32,
+    marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.xs,
+  },
+  kpiBreakdownCompact: { gap: 1 },
+  kpiBreakdownItem: {
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    flexShrink: 1,
+  },
+  kpiBreakdownItemCompact: { gap: 1 },
+  kpiBreakdownValueCompact: { fontSize: 10, lineHeight: 12 },
   kpiAccent: {
     position: 'absolute',
     left: 0,

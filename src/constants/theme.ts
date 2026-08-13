@@ -159,6 +159,22 @@ export const Colors: { light: Palette; dark: Palette } = {
   },
 };
 
+/** Pastel event colors used by the phone booking calendar. */
+export const BookingCalendarColors = {
+  light: [
+    { accent: '#2FA45A', fill: '#D9ECE5', border: '#B4D6C9' },
+    { accent: '#D09A24', fill: '#F1E6C8', border: '#DFD1A8' },
+    { accent: '#5B18B5', fill: '#D8D1E9', border: '#ADA0CD' },
+    { accent: '#D64B38', fill: '#EAD5D6', border: '#D7B3B5' },
+  ],
+  dark: [
+    { accent: '#43B96F', fill: 'rgba(47,164,90,0.22)', border: '#357C52' },
+    { accent: '#E1AC37', fill: 'rgba(208,154,36,0.22)', border: '#866A2F' },
+    { accent: '#9B7BDD', fill: 'rgba(91,24,181,0.24)', border: '#674C91' },
+    { accent: '#E26A59', fill: 'rgba(214,75,56,0.22)', border: '#874B45' },
+  ],
+} as const;
+
 export type ThemeColor = keyof Palette;
 
 /* ------------------------------------------------------------------ *

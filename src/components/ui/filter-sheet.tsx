@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { Animated, Modal, PanResponder, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Animated, Modal, PanResponder, ScrollView, StyleSheet, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui';
@@ -12,11 +12,14 @@ const DISMISS_THRESHOLD_V = 0.5;
 type Props = {
   visible: boolean;
   onClose: () => void;
+  onClosed?: () => void;
   title?: string;
+  scrollable?: boolean;
+  contentStyle?: StyleProp<ViewStyle>;
   children: ReactNode;
 };
 
-export function FilterSheet({ visible, onClose, title = 'Filters', children }: Props) {
+export function FilterSheet({ visible, onClose, onClosed, title = 'Filters', scrollable = true, contentStyle, children }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(400)).current;
@@ -59,7 +62,10 @@ export function FilterSheet({ visible, onClose, title = 'Filters', children }: P
       Animated.parallel([
         Animated.timing(fadeAnim, { toValue: 0, duration: 160, useNativeDriver: true }),
         Animated.timing(slideAnim, { toValue: 400, duration: 200, useNativeDriver: true }),
-      ]).start(() => setModalVisible(false));
+      ]).start(() => {
+        setModalVisible(false);
+        onClosed?.();
+      });
     }
   }, [visible]);
 
@@ -84,9 +90,13 @@ export function FilterSheet({ visible, onClose, title = 'Filters', children }: P
             </View>
           </View>
 
-          <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-            {children}
-          </ScrollView>
+          {scrollable ? (
+            <ScrollView contentContainerStyle={[styles.body, contentStyle]} showsVerticalScrollIndicator={false}>
+              {children}
+            </ScrollView>
+          ) : (
+            <View style={[styles.body, contentStyle]}>{children}</View>
+          )}
         </Animated.View>
       </View>
     </Modal>

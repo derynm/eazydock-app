@@ -9,7 +9,12 @@ import { useTheme } from '@/hooks/use-theme';
 import { Icon } from './icon';
 import { Text } from './text';
 
-export type Option<T extends string | number> = { label: string; value: T; hint?: string };
+export type Option<T extends string | number> = {
+  label: string;
+  value: T;
+  hint?: string;
+  hintTone?: 'neutral' | 'success' | 'warning';
+};
 
 type Props<T extends string | number> = {
   label?: string;
@@ -99,12 +104,18 @@ export function Select<T extends string | number>({
                           isSel && { backgroundColor: theme.primarySoft },
                           pressed && !isSel && { backgroundColor: theme.surfaceSunken },
                         ]}>
-                        <View style={styles.flex}>
+                        <View style={[styles.flex, styles.optionText]}>
                           <Text variant="body" tint={isSel ? theme.primary : theme.text}>
                             {item.label}
                           </Text>
                           {item.hint ? (
-                            <Text variant="caption" color="textMuted">
+                            <Text
+                              variant="caption"
+                              tint={item.hintTone === 'warning'
+                                ? theme.warning
+                                : item.hintTone === 'success'
+                                  ? theme.success
+                                  : theme.textMuted}>
                               {item.hint}
                             </Text>
                           ) : null}
@@ -142,5 +153,6 @@ const styles = StyleSheet.create({
   optionList: { flexGrow: 0 },
   shortOptionList: { minHeight: 56 },
   option: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm, borderRadius: Radius.md },
+  optionText: { gap: 2 },
   emptyOption: { paddingVertical: Spacing.lg, textAlign: 'center' },
 });

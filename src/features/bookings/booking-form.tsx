@@ -118,6 +118,8 @@ export function BookingForm({ visible, booking, onClose }: Props) {
     onMutate: () => setTopError(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['bookings-by-space'] });
+      qc.invalidateQueries({ queryKey: ['bookings-list'] });
       qc.invalidateQueries({ queryKey: ['drivers'] });
       qc.invalidateQueries({ queryKey: ['booking-form-data'] });
       if (booking) qc.invalidateQueries({ queryKey: ['booking', booking.id] });

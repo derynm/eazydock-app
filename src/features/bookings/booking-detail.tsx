@@ -27,6 +27,8 @@ export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () =>
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['booking', id] });
     qc.invalidateQueries({ queryKey: ['bookings'] });
+    qc.invalidateQueries({ queryKey: ['bookings-by-space'] });
+    qc.invalidateQueries({ queryKey: ['bookings-list'] });
     qc.invalidateQueries({ queryKey: ['transactions'] });
     qc.invalidateQueries({ queryKey: ['active-vehicles'] });
     qc.invalidateQueries({ queryKey: ['transaction-scope-count'] });
@@ -155,6 +157,8 @@ export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () =>
               try {
                 await deleteBooking(booking.id);
                 qc.invalidateQueries({ queryKey: ['bookings'] });
+                qc.invalidateQueries({ queryKey: ['bookings-by-space'] });
+                qc.invalidateQueries({ queryKey: ['bookings-list'] });
                 onChanged?.();
               } catch (e) {
                 const err = toApiError(e);
@@ -171,7 +175,7 @@ export function BookingDetail({ id, onChanged }: { id: number; onChanged?: () =>
   );
 }
 
-function FulfilModal({ visible, bookingId, onClose, onDone }: { visible: boolean; bookingId: number; onClose: () => void; onDone: () => void }) {
+export function FulfilModal({ visible, bookingId, onClose, onDone }: { visible: boolean; bookingId: number; onClose: () => void; onDone: () => void }) {
   const [comments, setComments] = useState('');
   const [error, setError] = useState<string | null>(null);
 

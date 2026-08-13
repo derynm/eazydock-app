@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Keyboard, KeyboardAvoidingView, Platform, StyleSheet, View, type ScrollView } from 'react-native';
 
-import { createBooking, getBookingFormData, type BookingInput } from '@/api/bookings';
+import { createBooking, getBookingFormData, listBookingsBySpace, type BookingInput } from '@/api/bookings';
 import { toApiError } from '@/api/client';
 import { searchDrivers } from '@/api/lookups';
 import { bookingSchema, type BookingForm as BookingFormValues } from '@/api/schemas';
@@ -12,11 +12,13 @@ import { searchDriverCompanies, searchVehicles } from '@/api/transactions';
 import { useSession } from '@/auth/session';
 import { FormScrollView } from '@/components/form-error-scroll';
 import { Screen } from '@/components/screen';
-import { AutocompleteField, Banner, Button, Card, DateTimeField, Section, Select, TextField, type AutocompleteItem } from '@/components/ui';
+import { AutocompleteField, Banner, Button, Card, DateTimeField, IconButton, Section, Select, TextField, type AutocompleteItem } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { lookupPlate, type ActiveTransaction } from '@/features/transactions/plate-lookup';
-import { timeAgo } from '@/lib/format';
+import { PlateScanner } from '@/features/transactions/plate-scanner';
+import { formatPlate, timeAgo } from '@/lib/format';
 import { DRIVER_TYPES } from '@/lib/options';
+import { instantFromSydneyDateTimeValue, toSydneyDateTimeValue } from '@/lib/sydney-time';
 import { zodResolver } from '@/lib/zod-resolver';
 
 const EMPTY: BookingFormValues = {
@@ -46,11 +48,41 @@ type LookupState =
       activeTransaction?: ActiveTransaction | null;
     };
 
+const MAX_CONFLICT_LOOKUP_DAYS = 31;
+
+function datesCoveredByRange(startsAt: string, endsAt: string): string[] {
+  const startValue = toSydneyDateTimeValue(startsAt);
+  const endValue = toSydneyDateTimeValue(endsAt);
+  const startDate = startValue.slice(0, 10);
+  const endDate = endValue.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || endDate < startDate) return [];
+
+  const dates: string[] = [];
+  const cursor = new Date(`${startDate}T00:00:00Z`);
+  const last = new Date(`${endDate}T00:00:00Z`);
+  while (cursor <= last && dates.length < MAX_CONFLICT_LOOKUP_DAYS) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function formatConflictTime(value: string): string {
+  const date = new Date(toSydneyDateTimeValue(value));
+  if (Number.isNaN(date.getTime())) return 'Unknown time';
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+}
+
 export function BookingCreate() {
   const router = useRouter();
   const qc = useQueryClient();
   const { selectedBuilding } = useSession();
   const [topError, setTopError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [lookup, setLookup] = useState<LookupState>({ status: 'idle' });
   const [revealed, setRevealed] = useState(false);
   const [hasOpenedForm, setHasOpenedForm] = useState(false);
@@ -68,8 +100,11 @@ export function BookingCreate() {
   const areaId = watch('parking_area_id');
   const driverId = watch('driver_id');
   const plateNumber = watch('plate_number');
+  const startsAt = watch('starts_at');
+  const endsAt = watch('ends_at');
   const normalizedPlate = plateNumber.trim().toUpperCase();
   const hasVehicleMatches = vehicleMatchesQuery === normalizedPlate;
+  const conflictLookupDates = datesCoveredByRange(startsAt, endsAt);
 
   useEffect(() => {
     if (buildingId) setValue('building_id', buildingId);
@@ -87,8 +122,67 @@ export function BookingCreate() {
   });
 
   const areas = (formData?.areas ?? []).filter((area) => area.building_id === buildingId);
-  const spaces = (formData?.spaces ?? []).filter((space) => space.parking_area_id === areaId);
+  const spaces = (formData?.spaces ?? [])
+    .filter((space) => space.parking_area_id === areaId)
+    .sort((a, b) => a.space_code.localeCompare(b.space_code, undefined, { numeric: true, sensitivity: 'base' }));
   const tenants = formData?.tenants ?? [];
+
+  const { data: bookingDays = [] } = useQuery({
+    queryKey: ['booking-time-conflicts', buildingId, areaId, startsAt, endsAt],
+    queryFn: () => Promise.all(conflictLookupDates.map((date) => listBookingsBySpace({
+      date,
+      building_id: buildingId,
+      parking_area_id: areaId,
+    }))),
+    enabled: !!buildingId && !!areaId && conflictLookupDates.length > 0,
+  });
+
+  const requestedStart = instantFromSydneyDateTimeValue(startsAt);
+  const requestedEnd = instantFromSydneyDateTimeValue(endsAt);
+  const conflictMap = new Map<string, { bay: string; plate: string; startsAt: string; endsAt: string }>();
+  bookingDays.flatMap((groups) => groups).forEach((group) => {
+    group.bookings.forEach((booking) => {
+      if (booking.status !== 'pending' && booking.status !== 'confirmed') return;
+      const existingStart = instantFromSydneyDateTimeValue(booking.starts_at);
+      const existingEnd = instantFromSydneyDateTimeValue(booking.ends_at);
+      const overlaps = !!requestedStart && !!requestedEnd && requestedEnd > requestedStart && !!existingStart && !!existingEnd &&
+        existingStart < requestedEnd && existingEnd > requestedStart;
+      if (overlaps) {
+        conflictMap.set(`${group.parking_space_id}:${booking.id}`, {
+          bay: group.space_code,
+          plate: formatPlate(booking.plate_number_raw),
+          startsAt: booking.starts_at,
+          endsAt: booking.ends_at,
+        });
+      }
+    });
+  });
+  const bookingConflicts = [...conflictMap.values()].sort((a, b) =>
+    a.bay.localeCompare(b.bay, undefined, { numeric: true, sensitivity: 'base' }) ||
+    a.startsAt.localeCompare(b.startsAt),
+  );
+  const occupiedSpaceIds = new Set(
+    bookingDays.flatMap((groups) => groups)
+      .filter((group) => group.status === 'occupied')
+      .map((group) => group.parking_space_id),
+  );
+  const isImmediateBooking = !!requestedStart && requestedStart.getTime() <= Date.now();
+  const bayOptions = spaces.map((space) => {
+    const conflicts = bookingConflicts.filter((conflict) => conflict.bay === space.space_code);
+    const currentlyOccupied = isImmediateBooking && occupiedSpaceIds.has(space.id);
+    return {
+      label: space.space_code,
+      value: space.id,
+      hint: currentlyOccupied
+        ? 'Currently occupied · unavailable for an immediate booking'
+        : conflicts.length > 0
+        ? conflicts.map((conflict) =>
+          `Time conflict · Plate ${conflict.plate} · ${formatConflictTime(conflict.startsAt)}–${formatConflictTime(conflict.endsAt)}`,
+        ).join(' • ')
+        : 'Available for this schedule',
+      hintTone: currentlyOccupied || conflicts.length > 0 ? 'warning' as const : 'success' as const,
+    };
+  });
 
   const runLookup = async () => {
     const plate = getValues('plate_number').trim();
@@ -111,8 +205,8 @@ export function BookingCreate() {
         return;
       }
 
-      setHasOpenedForm(true);
-      setRevealed(true);
+      setHasOpenedForm(!profile.activeTransaction);
+      setRevealed(!profile.activeTransaction);
       setValue('vehicle_id', profile.vehicleId ?? null);
       if (profile.driverType) setValue('driver_type', profile.driverType);
       setValue('parking_space_id', 0);
@@ -184,6 +278,8 @@ export function BookingCreate() {
     onMutate: () => setTopError(null),
     onSuccess: (booking) => {
       qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['bookings-by-space'] });
+      qc.invalidateQueries({ queryKey: ['bookings-list'] });
       qc.invalidateQueries({ queryKey: ['drivers'] });
       qc.invalidateQueries({ queryKey: ['booking-form-data'] });
       router.replace(`/bookings/${booking.id}`);
@@ -257,6 +353,9 @@ export function BookingCreate() {
                   onSubmitEditing={runLookup}
                   error={fieldState.error?.message}
                   hint={!revealed ? 'Type a plate — matching vehicles appear as you type.' : undefined}
+                  trailing={
+                    <IconButton name="scan" size={20} accessibilityLabel="Scan plate" onPress={() => setScanning(true)} />
+                  }
                 />
               )}
             />
@@ -300,7 +399,7 @@ export function BookingCreate() {
                 iconRight="arrowRight"
                 size="lg"
                 loading={lookup.status === 'loading'}
-                disabled={!plateNumber.trim()}
+                disabled={!plateNumber.trim() || (lookup.status === 'found' && !!lookup.activeTransaction)}
                 onPress={runLookup}
                 fullWidth
               />
@@ -358,7 +457,7 @@ export function BookingCreate() {
                       label="Bay"
                       required
                       value={field.value || null}
-                      options={spaces.map((space) => ({ label: space.space_code, value: space.id }))}
+                      options={bayOptions}
                       onChange={field.onChange}
                       error={fieldState.error?.message}
                       placeholder={areaId ? 'Select bay' : 'Choose an area first'}
@@ -487,6 +586,16 @@ export function BookingCreate() {
           ) : null}
         </FormScrollView>
       </KeyboardAvoidingView>
+
+      <PlateScanner
+        visible={scanning}
+        onClose={() => setScanning(false)}
+        onResult={(result) => {
+          clearPrefill();
+          setValue('plate_number', result.plate);
+          setScanning(false);
+        }}
+      />
     </Screen>
   );
 }

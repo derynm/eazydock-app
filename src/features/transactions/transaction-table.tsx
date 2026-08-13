@@ -16,7 +16,7 @@ import { Badge, Button, EmptyState, Skeleton, Text } from '@/components/ui';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useResponsive } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { durationSince, formatDuration, formatPlate } from '@/lib/format';
+import { durationSince, formatDuration, formatPlate, formatTime } from '@/lib/format';
 import { transactionStatusMeta } from '@/lib/status';
 
 type Props = {
@@ -36,7 +36,7 @@ type Props = {
   onCheckOut: (transaction: Transaction) => Promise<void>;
 };
 
-const TABLE_WIDTH = 992;
+const TABLE_WIDTH = 1152;
 
 export function TransactionTable({
   items,
@@ -118,6 +118,8 @@ export function TransactionTable({
             <HeaderCell label="Driver" width={180} />
             <HeaderCell label="Location" width={190} />
             <HeaderCell label="Status" width={120} />
+            <HeaderCell label="In" width={80} align="right" />
+            <HeaderCell label="Out" width={80} align="right" />
             <HeaderCell label="Duration" width={110} align="right" />
             <HeaderCell label="Action" width={140} align="right" />
           </View>
@@ -216,6 +218,8 @@ function TransactionTableRow({
         <Badge label={meta.label} tone={meta.tone} size="sm" dot />
         {transaction.is_overstay ? <Badge label="Overstay" tone="warning" size="sm" dot /> : null}
       </View>
+      <Cell width={80} value={formatTime(transaction.car_in_at)} align="right" />
+      <Cell width={80} value={formatTime(transaction.car_out_at)} align="right" />
       <View style={[styles.cell, styles.alignRight, { width: 110 }]}>
         <Text variant="caption" color="textSecondary" numberOfLines={1}>
           {active ? durationSince(transaction.car_in_at) : formatDuration(transaction.duration_minutes)}
@@ -238,9 +242,19 @@ function TransactionTableRow({
   );
 }
 
-function Cell({ width, value, strong }: { width: number; value: string; strong?: boolean }) {
+function Cell({
+  width,
+  value,
+  strong,
+  align,
+}: {
+  width: number;
+  value: string;
+  strong?: boolean;
+  align?: 'left' | 'right';
+}) {
   return (
-    <View style={[styles.cell, { width }]}>
+    <View style={[styles.cell, { width }, align === 'right' && styles.alignRight]}>
       <Text variant={strong ? 'bodyStrong' : 'body'} color={strong ? 'text' : 'textSecondary'} numberOfLines={1}>
         {value}
       </Text>
@@ -258,6 +272,8 @@ function TableSkeleton() {
           <View style={styles.skeletonDriver}><Skeleton width={126} height={14} /></View>
           <View style={styles.skeletonLocation}><Skeleton width={140} height={14} /></View>
           <View style={styles.skeletonStatus}><Skeleton width={74} height={22} radius={Radius.pill} /></View>
+          <View style={styles.skeletonTime}><Skeleton width={42} height={14} /></View>
+          <View style={styles.skeletonTime}><Skeleton width={42} height={14} /></View>
           <View style={styles.skeletonDuration}><Skeleton width={48} height={14} /></View>
           <View style={styles.skeletonAction}><Skeleton width={78} height={36} radius={Radius.md} /></View>
         </View>
@@ -304,6 +320,7 @@ const styles = StyleSheet.create({
   skeletonDriver: { width: 180, paddingHorizontal: Spacing.md },
   skeletonLocation: { width: 190, paddingHorizontal: Spacing.md },
   skeletonStatus: { width: 120, paddingHorizontal: Spacing.md },
+  skeletonTime: { width: 80, paddingHorizontal: Spacing.md, alignItems: 'flex-end' },
   skeletonDuration: { width: 110, paddingHorizontal: Spacing.md, alignItems: 'flex-end' },
   skeletonAction: { width: 140, paddingHorizontal: Spacing.sm, alignItems: 'flex-end' },
 });

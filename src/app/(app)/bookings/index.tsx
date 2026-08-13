@@ -1,11 +1,12 @@
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Platform,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -13,7 +14,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { listBookings, listBookingsBySpace } from '@/api/bookings';
+import { getBooking, listBookings, listBookingsBySpace } from '@/api/bookings';
 import { lookupParkingAreas } from '@/api/lookups';
 import type { Booking, BookingsBySpaceGroup, SpaceStatus } from '@/api/types';
 import { useSession } from '@/auth/session';
@@ -31,12 +32,13 @@ import {
   SearchBar,
   Segmented,
   Select,
+  Skeleton,
   Text,
   ViewModeToggle,
   type ViewMode,
 } from '@/components/ui';
-import { Radius, Spacing } from '@/constants/theme';
-import { BookingDetail } from '@/features/bookings/booking-detail';
+import { BookingCalendarColors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { BookingDetail, FulfilModal } from '@/features/bookings/booking-detail';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { usePaginatedList } from '@/hooks/use-paginated-list';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -75,6 +77,10 @@ function formatNavDate(d: Date): string {
   return label;
 }
 
+function formatCompactNavDate(d: Date): string {
+  return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(d);
+}
+
 const BOARD_FILTERS = [
   { value: '', label: 'All' },
   { value: 'available', label: 'Available' },
@@ -93,20 +99,31 @@ const LIST_FILTERS = [
 
 // ── Grid geometry ─────────────────────────────────────────────────────
 const ROW_H = 52;
+const PHONE_ROW_H = 64;
 const TIME_COL_W = 84;
+const PHONE_TIME_COL_W = 70;
 const CELL_W = 96;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const BLOCK_INSET = 3;
 // Tall enough to always fit all 4 detail lines (time, driver, plate, tenant),
 // even for a 1-hour booking — so short bookings never get truncated.
-const BLOCK_MIN_H = ROW_H;
 const BLOCK_LINE_H = 11;
 const BLOCK_V_PADDING = 4;
 
-function fullHourLabel(h: number): string {
+function fullHourLabel(h: number, compact = false): string {
   const period = h < 12 ? 'AM' : 'PM';
   const displayHour = h % 12 === 0 ? 12 : h % 12;
-  return `${displayHour}:00 ${period}`;
+  return `${displayHour}${compact ? '' : ':00'} ${period}`;
+}
+
+function formatCardTime(value: string): string {
+  const date = new Date(toSydneyDateTimeValue(value));
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
 }
 
 type BookingSegment = {
@@ -121,7 +138,7 @@ type BookingSegment = {
  * blocks (one per booking, spanning its full duration) instead of one dot
  * per hour cell — avoids the disconnected-pill look for multi-hour bookings.
  */
-function daySegments(bookings: Booking[], selectedDate: Date): BookingSegment[] {
+function daySegments(bookings: Booking[], selectedDate: Date, rowHeight: number): BookingSegment[] {
   const dayStart = new Date(selectedDate);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(dayStart.getTime() + 24 * 3_600_000);
@@ -140,8 +157,8 @@ function daySegments(bookings: Booking[], selectedDate: Date): BookingSegment[] 
 
     segments.push({
       booking: b,
-      top: startHour * ROW_H,
-      height: Math.max((endHour - startHour) * ROW_H, BLOCK_MIN_H),
+      top: startHour * rowHeight,
+      height: Math.max((endHour - startHour) * rowHeight, rowHeight),
       status: b.status === 'fulfilled' ? 'occupied' : 'booked',
     });
   }
@@ -164,7 +181,6 @@ function bookingLines(booking: Booking): string[] {
 /** Column header — space code only; per-hour status lives in the grid cells below. */
 function ColHeader({ group, colW }: { group: BookingsBySpaceGroup; colW: number }) {
   const theme = useTheme();
-  const isOccupied = group.status === 'occupied';
   return (
     <View
       style={[
@@ -172,13 +188,16 @@ function ColHeader({ group, colW }: { group: BookingsBySpaceGroup; colW: number 
         {
           width: colW,
           borderRightColor: theme.borderStrong,
-          backgroundColor: isOccupied ? theme.dangerSoft : 'transparent',
         },
       ]}>
-      <Text variant="label" numberOfLines={1} style={isOccupied ? { color: theme.danger } : undefined}>{group.space_code}</Text>
-      {isOccupied ? <View style={[styles.colStatusBar, { backgroundColor: theme.danger }]} /> : null}
+      <Text variant="label" numberOfLines={1}>{group.space_code}</Text>
     </View>
   );
+}
+
+function bookingColors(booking: Booking, scheme: 'light' | 'dark') {
+  const palette = BookingCalendarColors[scheme];
+  return palette[(booking.id - 1) % palette.length];
 }
 
 /**
@@ -186,15 +205,22 @@ function ColHeader({ group, colW }: { group: BookingsBySpaceGroup; colW: number 
  * duration — translucent tint (hour gridlines still read through), a
  * colored left accent bar, and as many detail lines as the height fits.
  */
-function BookingBlock({ segment, colW, onPress }: { segment: BookingSegment; colW: number; onPress: () => void }) {
+function BookingBlock({ segment, colW, phone, selected, spaceStatus, onPress }: { segment: BookingSegment; colW: number; phone?: boolean; selected?: boolean; spaceStatus: SpaceStatus; onPress: () => void }) {
   const theme = useTheme();
+  const scheme = useScheme();
   const { booking, top, height, status } = segment;
   const isOccupied = status === 'occupied';
-  const accent = isOccupied ? theme.danger : theme.warning;
-  const fill = isOccupied ? theme.dangerSoft : theme.warningSoft;
+  const eventColors = bookingColors(booking, scheme);
+  const accent = phone ? eventColors.accent : isOccupied ? theme.danger : theme.warning;
+  const fill = phone ? eventColors.fill : isOccupied ? theme.dangerSoft : theme.warningSoft;
   const lines = bookingLines(booking);
   const maxLines = Math.max(1, Math.floor((height - BLOCK_V_PADDING * 2) / BLOCK_LINE_H));
   const visibleLines = lines.slice(0, maxLines);
+  const bookingMeta = statusMeta(booking.status);
+  const displayStatus = booking.status === 'fulfilled'
+    ? { label: spaceStatus === 'occupied' ? 'On site' : 'Complete', tone: spaceStatus === 'occupied' ? 'success' as const : 'neutral' as const }
+    : bookingMeta;
+  const driverDetails = [booking.driver?.full_name, booking.driver?.phone].filter(Boolean).join(' · ');
 
   return (
     <TouchableOpacity
@@ -208,19 +234,42 @@ function BookingBlock({ segment, colW, onPress }: { segment: BookingSegment; col
           width: colW - BLOCK_INSET * 2,
           left: BLOCK_INSET,
           backgroundColor: fill,
-          borderLeftWidth: 3,
+          borderLeftWidth: phone ? 0 : 3,
           borderLeftColor: accent,
+          borderWidth: selected ? 2 : StyleSheet.hairlineWidth,
+          borderColor: phone ? eventColors.border : accent,
+          paddingHorizontal: phone ? Spacing.md : 6,
+          paddingVertical: phone ? Spacing.sm : BLOCK_V_PADDING,
+          justifyContent: phone ? 'flex-start' : 'center',
         },
       ]}>
-      {visibleLines.map((line, i) => (
-        <Text
-          key={i}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-          style={[styles.blockLine, { color: theme.text, fontWeight: i === 0 ? '700' : '400' }]}>
-          {line}
-        </Text>
-      ))}
+      {phone ? (
+        <View style={styles.phoneBlockContent}>
+          <View style={styles.phoneBlockTitle}>
+            <View style={[styles.eventDot, { backgroundColor: accent }]} />
+            <Text variant="label" numberOfLines={1} style={styles.phoneBlockPlate}>{formatPlate(booking.plate_number_raw)}</Text>
+            <View style={[styles.phoneStatus, { backgroundColor: eventColors.accent }]}>
+              <Text variant="caption" tint="#FFFFFF" numberOfLines={1} style={styles.phoneStatusText}>
+                {displayStatus.label}
+              </Text>
+            </View>
+          </View>
+          <Text variant="caption" color="textSecondary" numberOfLines={1} style={styles.phoneBlockMeta}>
+            {driverDetails || 'Unassigned driver'}
+          </Text>
+          <Text variant="caption" color="textSecondary" numberOfLines={1} style={styles.phoneBlockMeta}>
+            {formatCardTime(booking.starts_at)} – {formatCardTime(booking.ends_at)}
+          </Text>
+        </View>
+      ) : visibleLines.map((line, i) => (
+          <Text
+            key={i}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[styles.blockLine, { color: theme.text, fontWeight: i === 0 ? '700' : '400' }]}>
+            {line}
+          </Text>
+        ))}
     </TouchableOpacity>
   );
 }
@@ -232,6 +281,9 @@ function GridColumn({
   selectedDate,
   isToday,
   nowHour,
+  rowHeight = ROW_H,
+  phone = false,
+  selectedBookingId,
   onPressBooking,
 }: {
   group: BookingsBySpaceGroup;
@@ -239,11 +291,13 @@ function GridColumn({
   selectedDate: Date;
   isToday: boolean;
   nowHour: number;
+  rowHeight?: number;
+  phone?: boolean;
+  selectedBookingId?: number;
   onPressBooking: (booking: Booking) => void;
 }) {
   const theme = useTheme();
-  const segments = useMemo(() => daySegments(group.bookings, selectedDate), [group.bookings, selectedDate]);
-  const isOccupied = group.status === 'occupied';
+  const segments = useMemo(() => daySegments(group.bookings, selectedDate, rowHeight), [group.bookings, selectedDate, rowHeight]);
 
   return (
     <View
@@ -251,9 +305,8 @@ function GridColumn({
         styles.gridColumn,
         {
           width: colW,
-          height: ROW_H * HOURS.length,
+          height: rowHeight * HOURS.length,
           borderRightColor: theme.borderStrong,
-          backgroundColor: isOccupied ? theme.dangerSoft : 'transparent',
         },
       ]}>
       {HOURS.map((h) => (
@@ -262,7 +315,7 @@ function GridColumn({
           style={[
             styles.gridRowBg,
             {
-              height: ROW_H,
+              height: rowHeight,
               borderBottomColor: theme.border,
               backgroundColor: isToday && h === nowHour ? theme.primarySoft : 'transparent',
             },
@@ -274,9 +327,99 @@ function GridColumn({
           key={seg.booking.id}
           segment={seg}
           colW={colW}
+          phone={phone}
+          selected={selectedBookingId === seg.booking.id}
+          spaceStatus={group.status}
           onPress={() => onPressBooking(seg.booking)}
         />
       ))}
+    </View>
+  );
+}
+
+function BayTabs({ groups, selectedId, onSelect }: { groups: BookingsBySpaceGroup[]; selectedId?: number; onSelect: (id: number) => void }) {
+  const theme = useTheme();
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bayTabsContent} style={[styles.bayTabs, { borderBottomColor: theme.border }]}>
+      {groups.map((group) => {
+        const selected = group.parking_space_id === selectedId;
+        return (
+          <TouchableOpacity
+            key={group.parking_space_id}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            onPress={() => onSelect(group.parking_space_id)}
+            style={[
+              styles.bayTab,
+              {
+                backgroundColor: selected ? theme.primary : theme.surfaceAlt,
+                borderColor: selected ? theme.primary : theme.border,
+              },
+            ]}>
+            <Text variant="label" tint={selected ? theme.onPrimary : theme.textSecondary} numberOfLines={1}>
+              {group.space_code}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function BookingQuickPreview({
+  id,
+  onFulfil,
+  onDetails,
+}: {
+  id: number;
+  onFulfil: () => void;
+  onDetails: () => void;
+}) {
+  const scheme = useScheme();
+  const { can } = usePermissions();
+  const { data: booking, isLoading } = useQuery({
+    queryKey: ['booking', id],
+    queryFn: () => getBooking(id),
+  });
+
+  if (isLoading || !booking) {
+    return (
+      <View style={styles.quickLoading}>
+        <Skeleton width="42%" height={26} />
+        <Skeleton width="70%" height={16} />
+      </View>
+    );
+  }
+
+  const meta = statusMeta(booking.status);
+  const colors = bookingColors(booking, scheme);
+  const canFulfil = can('operations.bookings', 'update') &&
+    (booking.status === 'pending' || booking.status === 'confirmed');
+
+  return (
+    <View style={styles.quickPreview}>
+      <View style={styles.quickSummary}>
+        <View style={[styles.quickDot, { backgroundColor: colors.accent }]} />
+        <View style={styles.quickText}>
+          <Text variant="heading" numberOfLines={1}>{formatPlate(booking.plate_number_raw)}</Text>
+          <Text variant="body" color="textSecondary" numberOfLines={1}>
+            {booking.parking_space?.space_code ?? 'Unassigned bay'} · {formatCardTime(booking.starts_at)} – {formatCardTime(booking.ends_at)}
+          </Text>
+        </View>
+        <Badge label={meta.label} tone={meta.tone} size="sm" />
+      </View>
+      <View style={styles.quickActions}>
+        {canFulfil ? (
+          <Button title="Fulfil" icon="carIn" onPress={onFulfil} style={styles.quickAction} />
+        ) : null}
+        <Button
+          title="View details"
+          iconRight="chevronRight"
+          variant={canFulfil ? 'secondary' : 'primary'}
+          onPress={onDetails}
+          style={styles.quickAction}
+        />
+      </View>
     </View>
   );
 }
@@ -304,10 +447,11 @@ function Legend() {
 // ── Screen ────────────────────────────────────────────────────────────
 export default function BookingsScreen() {
   const router = useRouter();
+  const qc = useQueryClient();
   const theme = useTheme();
   const scheme = useScheme();
   const { can } = usePermissions();
-  const { isTablet } = useResponsive();
+  const { isTablet, isPhone } = useResponsive();
   const { selectedBuilding } = useSession();
   const { width: screenWidth } = useWindowDimensions();
   const vScrollRef = useRef<ScrollView>(null);
@@ -322,6 +466,13 @@ export default function BookingsScreen() {
   const [selectedDate, setSelectedDate] = useState(sydneyNowPickerDate);
   const [iosDateOpen, setIosDateOpen] = useState(false);
   const [draftDate, setDraftDate] = useState(selectedDate);
+  const [selectedSpaceId, setSelectedSpaceId] = useState<number>();
+  const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
+  const [fulfilBookingId, setFulfilBookingId] = useState<number | null>(null);
+  const [pendingBookingAction, setPendingBookingAction] = useState<{
+    type: 'fulfil' | 'details';
+    id: number;
+  } | null>(null);
   const debounced = useDebouncedValue(search);
   const dateStr = toISODate(selectedDate);
   const isToday = dateStr === toISODate(sydneyNowPickerDate());
@@ -368,8 +519,13 @@ export default function BookingsScreen() {
   const sortedGroups = [...groups].sort((a, b) =>
     a.space_code.localeCompare(b.space_code, undefined, { numeric: true, sensitivity: 'base' }),
   );
+  const activeSpaceId = sortedGroups.some((group) => group.parking_space_id === selectedSpaceId)
+    ? selectedSpaceId
+    : sortedGroups[0]?.parking_space_id;
+  const selectedGroup = sortedGroups.find((group) => group.parking_space_id === activeSpaceId);
   const count = sortedGroups.length;
-  const availableW = screenWidth - TIME_COL_W;
+  const timeColumnWidth = isPhone ? PHONE_TIME_COL_W : TIME_COL_W;
+  const availableW = screenWidth - timeColumnWidth;
   const colW = count > 0 && count * CELL_W < availableW
     ? Math.floor(availableW / count)
     : CELL_W;
@@ -381,11 +537,12 @@ export default function BookingsScreen() {
 
   const goToDate = (d: Date) => {
     setSelectedDate(d);
+    setSelectedBookingId(null);
     const sydneyNow = sydneyNowPickerDate();
     const isTargetToday = toISODate(d) === toISODate(sydneyNow);
     const offset = isTargetToday
-      ? Math.max((sydneyNow.getHours() - 1) * ROW_H, 0)
-      : 8 * ROW_H; // 8 AM for other days
+      ? Math.max((sydneyNow.getHours() - 1) * (isPhone ? PHONE_ROW_H : ROW_H), 0)
+      : 8 * (isPhone ? PHONE_ROW_H : ROW_H); // 8 AM for other days
     setTimeout(() => vScrollRef.current?.scrollTo({ y: offset, animated: false }), 150);
   };
 
@@ -404,10 +561,10 @@ export default function BookingsScreen() {
 
   // Scroll to 1 hour before now on mount
   useEffect(() => {
-    const offset = Math.max((sydneyNowPickerDate().getHours() - 1) * ROW_H, 0);
+    const offset = Math.max((sydneyNowPickerDate().getHours() - 1) * (isPhone ? PHONE_ROW_H : ROW_H), 0);
     const t = setTimeout(() => vScrollRef.current?.scrollTo({ y: offset, animated: false }), 150);
     return () => clearTimeout(t);
-  }, []);
+  }, [isPhone]);
 
   // Sync horizontal scroll: body → header
   const onBodyScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -419,65 +576,106 @@ export default function BookingsScreen() {
       title="Bookings"
       headerRight={
         <View style={styles.headerActions}>
-          <View>
-            <IconButton name="filter" accessibilityLabel="Filter bookings" surface onPress={() => setShowFilter(true)} />
-            {hasFilters && <View style={[styles.filterDot, { backgroundColor: theme.primary }]} />}
-          </View>
+          {isTablet ? (
+            <View>
+              <IconButton name="filter" accessibilityLabel="Filter bookings" surface onPress={() => setShowFilter(true)} />
+              {hasFilters && <View style={[styles.filterDot, { backgroundColor: theme.primary }]} />}
+            </View>
+          ) : null}
           {can('operations.bookings', 'create') && (
             isTablet ? (
               <Button title="New booking" icon="add" size="sm" onPress={() => router.push('/bookings/create')} />
-            ) : (
-              <IconButton name="add" accessibilityLabel="New booking" surface onPress={() => router.push('/bookings/create')} />
-            )
+            ) : null
           )}
         </View>
       }>
       <View style={styles.root}>
         {/* Date navigation */}
         <View style={[styles.dateNav, { borderBottomColor: theme.border }]}>
-          <IconButton name="chevronLeft" accessibilityLabel="Previous day" onPress={() => goToDate(addDays(selectedDate, -1))} />
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel={isTablet ? 'Go to today' : 'Choose date'}
-            onPress={isTablet ? () => goToDate(sydneyNowPickerDate()) : openDatePicker}
-            style={styles.dateLabel}>
-            <Text variant="subtitle" numberOfLines={1}>{formatNavDate(selectedDate)}</Text>
-          </TouchableOpacity>
-          <IconButton name="chevronRight" accessibilityLabel="Next day" onPress={() => goToDate(addDays(selectedDate, 1))} />
-          {isTablet ? (
-            <IconButton name="bookings" accessibilityLabel="Choose date" onPress={openDatePicker} />
-          ) : null}
-          <ViewModeToggle
-            value={viewMode}
-            onChange={changeViewMode}
-            cardsIcon="bookings"
-            tableIcon="listView"
-            cardsLabel="Calendar view"
-            tableLabel="List view"
-          />
+          {isPhone ? (
+            <>
+              <View style={styles.phoneDateGroup}>
+                <IconButton name="chevronLeft" accessibilityLabel="Previous day" onPress={() => goToDate(addDays(selectedDate, -1))} />
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose date"
+                  onPress={openDatePicker}
+                  style={[styles.dateLabel, styles.dateLabelPhone]}>
+                  <Text variant="subtitle" numberOfLines={1}>{formatCompactNavDate(selectedDate)}</Text>
+                </TouchableOpacity>
+                <IconButton name="chevronRight" accessibilityLabel="Next day" onPress={() => goToDate(addDays(selectedDate, 1))} />
+              </View>
+              <View style={styles.phoneDateActions}>
+                <View>
+                  <IconButton name="filter" accessibilityLabel="Filter bookings" surface onPress={() => setShowFilter(true)} />
+                  {hasFilters && <View style={[styles.filterDot, { backgroundColor: theme.primary }]} />}
+                </View>
+                <ViewModeToggle
+                  value={viewMode}
+                  onChange={changeViewMode}
+                  cardsIcon="bookings"
+                  tableIcon="listView"
+                  cardsLabel="Calendar view"
+                  tableLabel="List view"
+                />
+              </View>
+            </>
+          ) : (
+            <>
+              <IconButton name="chevronLeft" accessibilityLabel="Previous day" onPress={() => goToDate(addDays(selectedDate, -1))} />
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Go to today"
+                onPress={() => goToDate(sydneyNowPickerDate())}
+                style={styles.dateLabel}>
+                <Text variant="subtitle" numberOfLines={1}>{formatNavDate(selectedDate)}</Text>
+              </TouchableOpacity>
+              <IconButton name="chevronRight" accessibilityLabel="Next day" onPress={() => goToDate(addDays(selectedDate, 1))} />
+              <IconButton name="bookings" accessibilityLabel="Choose date" onPress={openDatePicker} />
+              <ViewModeToggle
+                value={viewMode}
+                onChange={changeViewMode}
+                cardsIcon="bookings"
+                tableIcon="listView"
+                cardsLabel="Calendar view"
+                tableLabel="List view"
+              />
+            </>
+          )}
         </View>
 
         {viewMode === 'cards' ? (
           <>
-            <Legend />
+            {isTablet ? <Legend /> : null}
 
             {isError ? (
               <Banner title="Couldn’t load bookings" message={error?.message} tone="danger" actionLabel="Retry" onAction={refetch} />
             ) : null}
 
-            {/* Fixed column headers — one per parking space, scrolls horizontally in sync */}
-            <View style={[styles.headRow, { borderBottomColor: theme.border }]}>
-              <View style={[styles.timespacer, { borderRightColor: theme.borderStrong }]} />
-              <ScrollView
-                ref={headerHRef}
-                horizontal
-                scrollEnabled={false}
-                showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: 'row' }}>
-                  {sortedGroups.map((g) => <ColHeader key={g.parking_space_id} group={g} colW={colW} />)}
-                </View>
-              </ScrollView>
-            </View>
+            {isPhone ? (
+              <BayTabs
+                groups={sortedGroups}
+                selectedId={activeSpaceId}
+                onSelect={(id) => {
+                  setSelectedSpaceId(id);
+                  setSelectedBookingId(null);
+                }}
+              />
+            ) : (
+              /* Fixed column headers — one per parking space, scrolls horizontally in sync */
+              <View style={[styles.headRow, { borderBottomColor: theme.border }]}>
+                <View style={[styles.timespacer, { borderRightColor: theme.borderStrong }]} />
+                <ScrollView
+                  ref={headerHRef}
+                  horizontal
+                  scrollEnabled={false}
+                  showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row' }}>
+                    {sortedGroups.map((g) => <ColHeader key={g.parking_space_id} group={g} colW={colW} />)}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
 
             {/* Time grid — vertical scroll */}
             <ScrollView
@@ -487,43 +685,71 @@ export default function BookingsScreen() {
               refreshControl={
                 <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.primary} />
               }>
-              <View style={{ flexDirection: 'row' }}>
+              <View style={{ flexDirection: 'row', paddingVertical: isPhone ? Spacing.sm : 0 }}>
                 {/* Fixed time labels column */}
-                <View style={[styles.timeline, { borderRightColor: theme.borderStrong }]}>
+                <View style={[styles.timeline, { width: timeColumnWidth, borderRightColor: theme.borderStrong, backgroundColor: theme.surfaceAlt }]}>
                   {HOURS.map((h) => (
                     <View
                       key={h}
                       style={[
                         styles.timeCell,
-                        { height: ROW_H, backgroundColor: isToday && h === nowHour ? theme.primarySoft : 'transparent' },
+                        {
+                          height: isPhone ? PHONE_ROW_H : ROW_H,
+                          backgroundColor: isToday && h === nowHour ? theme.primarySoft : 'transparent',
+                          justifyContent: isPhone ? 'flex-start' : 'center',
+                        },
                       ]}>
-                      <Text variant="caption" color="textMuted">{fullHourLabel(h)}</Text>
+                      <Text
+                        variant="caption"
+                        color="textSecondary"
+                        style={isPhone ? styles.phoneTimeLabel : undefined}>
+                        {fullHourLabel(h, isPhone)}
+                      </Text>
                     </View>
                   ))}
                 </View>
 
-                {/* Space columns — horizontal scroll synced with header */}
-                <ScrollView
-                  ref={bodyHRef}
-                  horizontal
-                  style={{ flex: 1 }}
-                  onScroll={onBodyScroll}
-                  scrollEventThrottle={16}
-                  showsHorizontalScrollIndicator={false}>
-                  <View style={{ flexDirection: 'row', minWidth: availableW }}>
-                    {sortedGroups.map((g) => (
+                {isPhone ? (
+                  <View style={{ width: availableW }}>
+                    {selectedGroup ? (
                       <GridColumn
-                        key={g.parking_space_id}
-                        group={g}
-                        colW={colW}
+                        key={selectedGroup.parking_space_id}
+                        group={selectedGroup}
+                        colW={availableW}
                         selectedDate={selectedDate}
                         isToday={isToday}
                         nowHour={nowHour}
-                        onPressBooking={(booking) => router.push(`/bookings/${booking.id}`)}
+                        rowHeight={PHONE_ROW_H}
+                        phone
+                        selectedBookingId={selectedBookingId ?? undefined}
+                        onPressBooking={(booking) => setSelectedBookingId(booking.id)}
                       />
-                    ))}
+                    ) : null}
                   </View>
-                </ScrollView>
+                ) : (
+                  /* Space columns — horizontal scroll synced with header */
+                  <ScrollView
+                    ref={bodyHRef}
+                    horizontal
+                    style={{ flex: 1 }}
+                    onScroll={onBodyScroll}
+                    scrollEventThrottle={16}
+                    showsHorizontalScrollIndicator={false}>
+                    <View style={{ flexDirection: 'row', minWidth: availableW }}>
+                      {sortedGroups.map((g) => (
+                        <GridColumn
+                          key={g.parking_space_id}
+                          group={g}
+                          colW={colW}
+                          selectedDate={selectedDate}
+                          isToday={isToday}
+                          nowHour={nowHour}
+                          onPressBooking={(booking) => router.push(`/bookings/${booking.id}`)}
+                        />
+                      ))}
+                    </View>
+                  </ScrollView>
+                )}
               </View>
             </ScrollView>
           </>
@@ -540,7 +766,7 @@ export default function BookingsScreen() {
             loadingMore={bookingList.isFetchingNextPage}
             emptyTitle="No bookings found"
             emptyDescription={debounced || status ? 'Try adjusting your filters.' : 'Bookings for this day will appear here.'}
-            onOpen={(id) => router.push(`/bookings/${id}`)}
+            onOpen={(id) => isPhone ? setSelectedBookingId(id) : router.push(`/bookings/${id}`)}
             renderDetail={(id) => (
               <BookingDetail key={id} id={id} onChanged={() => void bookingList.refetch()} />
             )}
@@ -587,6 +813,55 @@ export default function BookingsScreen() {
         />
       </FilterSheet>
 
+      <FilterSheet
+        visible={isPhone && selectedBookingId !== null}
+        onClose={() => setSelectedBookingId(null)}
+        onClosed={() => {
+          if (!pendingBookingAction) return;
+          if (pendingBookingAction.type === 'fulfil') {
+            setFulfilBookingId(pendingBookingAction.id);
+          } else {
+            router.push(`/bookings/${pendingBookingAction.id}`);
+          }
+          setPendingBookingAction(null);
+        }}
+        title="Booking"
+        scrollable={false}
+        contentStyle={styles.quickDrawerBody}>
+        {selectedBookingId !== null ? (
+          <BookingQuickPreview
+            id={selectedBookingId}
+            onFulfil={() => {
+              setPendingBookingAction({ type: 'fulfil', id: selectedBookingId });
+              setSelectedBookingId(null);
+            }}
+            onDetails={() => {
+              setPendingBookingAction({ type: 'details', id: selectedBookingId });
+              setSelectedBookingId(null);
+            }}
+          />
+        ) : null}
+      </FilterSheet>
+
+      {fulfilBookingId !== null ? (
+        <FulfilModal
+          visible
+          bookingId={fulfilBookingId}
+          onClose={() => setFulfilBookingId(null)}
+          onDone={() => {
+            void qc.invalidateQueries({ queryKey: ['booking', fulfilBookingId] });
+            void qc.invalidateQueries({ queryKey: ['bookings'] });
+            void qc.invalidateQueries({ queryKey: ['bookings-by-space'] });
+            void qc.invalidateQueries({ queryKey: ['bookings-list'] });
+            void qc.invalidateQueries({ queryKey: ['transactions'] });
+            void qc.invalidateQueries({ queryKey: ['active-vehicles'] });
+            void qc.invalidateQueries({ queryKey: ['transaction-scope-count'] });
+            void qc.invalidateQueries({ queryKey: ['dashboard'] });
+            setFulfilBookingId(null);
+          }}
+        />
+      ) : null}
+
       {Platform.OS === 'ios' ? (
         <PickerSheetModal visible={iosDateOpen} onClose={() => setIosDateOpen(false)}>
           {(dismiss) => (
@@ -612,6 +887,21 @@ export default function BookingsScreen() {
           )}
         </PickerSheetModal>
       ) : null}
+
+      {isPhone && can('operations.bookings', 'create') ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="New booking"
+          onPress={() => router.push('/bookings/create')}
+          style={({ pressed }) => [
+            styles.bookingFab,
+            { backgroundColor: theme.primary },
+            Shadow.md as object,
+            pressed && styles.bookingFabPressed,
+          ]}>
+          <Icon name="add" size={26} color={theme.onPrimary} />
+        </Pressable>
+      ) : null}
     </Screen>
   );
 }
@@ -632,11 +922,24 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
   },
+  bookingFab: {
+    position: 'absolute',
+    right: Spacing.lg,
+    bottom: Spacing.lg,
+    width: 56,
+    height: 56,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  bookingFabPressed: { opacity: 0.8, transform: [{ scale: 0.96 }] },
 
   // Date navigation
   dateNav: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -644,7 +947,30 @@ const styles = StyleSheet.create({
   dateLabel: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 2,
+  },
+  dateLabelPhone: { flex: 0, width: 148 },
+  phoneDateGroup: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  phoneDateActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+
+  // Phone bay selector
+  bayTabs: {
+    flexGrow: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  bayTabsContent: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  bayTab: {
+    minWidth: 82,
+    minHeight: 42,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
   },
 
   // Legend
@@ -673,8 +999,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
-  colStatusBar: { width: 22, height: 3, borderRadius: Radius.pill },
-
   // Scrollable grid
   scroll: { flex: 1 },
   timeline: {
@@ -686,6 +1010,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingRight: Spacing.sm,
   },
+  phoneTimeLabel: { transform: [{ translateY: -8 }] },
 
   // Column background hour rows
   gridColumn: {
@@ -701,12 +1026,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: BLOCK_V_PADDING,
     borderRadius: Radius.sm,
-    justifyContent: 'center',
   },
   blockLine: {
     fontSize: 9,
     lineHeight: BLOCK_LINE_H,
   },
+  phoneBlockTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  phoneBlockContent: { gap: 1 },
+  phoneBlockPlate: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 18 },
+  phoneStatus: { paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: Radius.pill },
+  phoneStatusText: { fontWeight: '600' },
+  eventDot: { width: 10, height: 10, borderRadius: Radius.pill },
+  phoneBlockMeta: { marginLeft: 18, lineHeight: 14 },
+
+  quickDrawerBody: { paddingTop: Spacing.sm },
+  quickLoading: { gap: Spacing.sm, paddingVertical: Spacing.lg },
+  quickPreview: { gap: Spacing.lg },
+  quickSummary: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  quickDot: { width: 18, height: 18, borderRadius: Radius.pill },
+  quickText: { flex: 1, minWidth: 0, gap: 2 },
+  quickActions: { flexDirection: 'row', gap: Spacing.sm },
+  quickAction: { flex: 1 },
 
   picker: { width: '100%', maxWidth: 320, height: 216, alignSelf: 'center' },
 });
