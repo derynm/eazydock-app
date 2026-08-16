@@ -46,6 +46,7 @@ export function TimeField({ label, value, onChange, placeholder = 'Any time', cl
       DateTimePickerAndroid.open({
         value: base,
         mode: 'time',
+        is24Hour: true,
         onChange: (_, picked) => {
           if (picked) onChange(toTime(picked));
         },
@@ -96,6 +97,7 @@ export function TimeField({ label, value, onChange, placeholder = 'Any time', cl
                 value={draft}
                 mode="time"
                 display="spinner"
+                locale="en-GB"
                 onChange={(_, time) => time && setDraft(time)}
                 themeVariant={scheme}
                 style={styles.picker}

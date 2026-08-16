@@ -54,6 +54,7 @@ export function DateTimeField({
           DateTimePickerAndroid.open({
             value: picked,
             mode: 'time',
+            is24Hour: true,
             onChange: (__, time) => {
               if (time) onChange(sydneyDateTimeValueFromPicker(time));
             },
@@ -116,6 +117,7 @@ export function DateTimeField({
                 value={draft}
                 mode="datetime"
                 display="spinner"
+                locale="en-GB"
                 onChange={(_, d) => d && setDraft(d)}
                 themeVariant={scheme}
                 style={styles.picker}

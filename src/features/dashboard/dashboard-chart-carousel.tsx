@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
 import { Image } from 'expo-image';
+import { useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -13,16 +13,14 @@ import {
 import type {
   DashboardDailyParkingHours,
   DashboardMetrics,
-  DashboardOccupancy,
 } from '@/api/types';
-import { Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { ChartPalette, Radius, Spacing } from '@/constants/theme';
+import { useScheme, useTheme } from '@/hooks/use-theme';
 
-import { Text } from '@/components/ui';
+import { Icon, Text, type IconName } from '@/components/ui';
 
 type Props = {
   metrics: DashboardMetrics;
-  occupancy: DashboardOccupancy;
   dailyParkingHours: DashboardDailyParkingHours[];
   ringSize: number;
 };
@@ -30,14 +28,17 @@ type Props = {
 const slides = [
   { key: 'daily-occupancy', title: 'Weekly occupancy' },
   { key: 'movement', title: 'Today’s movement' },
-  { key: 'occupancy', title: 'Occupancy' },
+  { key: 'occupancy', title: 'Parking space status' },
 ] as const;
 
-export function DashboardChartCarousel({ metrics, occupancy, dailyParkingHours, ringSize }: Props) {
+export function DashboardChartCarousel({ metrics, dailyParkingHours, ringSize }: Props) {
   const theme = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   const [width, setWidth] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
+  // The weekly chart (value row + 5 gridlines + day labels) needs more room
+  // than the occupancy ring, so the viewport has its own minimum height.
+  const viewportHeight = Math.max(ringSize, 196);
 
   const onLayout = (event: LayoutChangeEvent) => {
     const nextWidth = event.nativeEvent.layout.width;
@@ -63,7 +64,7 @@ export function DashboardChartCarousel({ metrics, occupancy, dailyParkingHours, 
         {activeIndex === 0 ? <WeekEndingLabel daily={dailyParkingHours} /> : null}
       </View>
 
-      <View style={[styles.viewport, { height: ringSize }]}>
+      <View style={[styles.viewport, { height: viewportHeight }]}>
         {width > 0 ? (
           <ScrollView
             ref={scrollRef}
@@ -73,30 +74,21 @@ export function DashboardChartCarousel({ metrics, occupancy, dailyParkingHours, 
             showsHorizontalScrollIndicator={false}
             onMomentumScrollEnd={onMomentumScrollEnd}
             scrollEventThrottle={16}>
-            <View style={[styles.slide, { width }]}>
+            <View style={[styles.slide, { width, height: viewportHeight }]}>
               <DailyOccupancyChart daily={dailyParkingHours} />
             </View>
 
-            <View style={[styles.slide, { width }]}>
-              <ComparisonBar
-                label="Check-ins"
-                value={metrics.today_transactions}
-                max={Math.max(metrics.today_transactions, metrics.today_checkouts, 1)}
-                color={theme.success}
+            <View
+              style={[styles.slide, { width, height: viewportHeight }]}>
+              <MovementOverview
+                checkIns={metrics.today_transactions}
+                checkOuts={metrics.today_checkouts}
+                ringSize={ringSize < 140 ? 120 : 144}
               />
-              <ComparisonBar
-                label="Check-outs"
-                value={metrics.today_checkouts}
-                max={Math.max(metrics.today_transactions, metrics.today_checkouts, 1)}
-                color={theme.primary}
-              />
-              <Text variant="caption" color="textMuted">
-                {metrics.today_transactions + metrics.today_checkouts} movements recorded today
-              </Text>
             </View>
 
-            <View style={[styles.slide, styles.occupancySlide, { width }]}>
-              <OccupancyContent occupancy={occupancy} ringSize={ringSize} />
+            <View style={[styles.slide, { width, height: viewportHeight }]}>
+              <ParkingSpaceStatus metrics={metrics} />
             </View>
 
           </ScrollView>
@@ -137,10 +129,15 @@ function WeekEndingLabel({ daily }: { daily: DashboardDailyParkingHours[] }) {
   );
 }
 
+const Y_AXIS_STEPS = [100, 75, 50, 25, 0] as const;
+const Y_AXIS_WIDTH = 26;
+
 function DailyOccupancyChart({ daily }: { daily: DashboardDailyParkingHours[] }) {
   const theme = useTheme();
+  const palette = ChartPalette[useScheme()];
   const [pressedDate, setPressedDate] = useState<string | null>(null);
   const operatingDays = daily.filter((day) => day.is_operating_day);
+  const today = formatLocalIsoDate(new Date());
 
   if (operatingDays.length === 0) {
     return (
@@ -159,72 +156,85 @@ function DailyOccupancyChart({ daily }: { daily: DashboardDailyParkingHours[] })
         .map((day) => `${formatDayLabel(day.date)}, ${day.occupancy_percentage}%`)
         .join('; ')}`}
       style={styles.weeklyChart}>
-      <View style={styles.weeklyPlot}>
+      <View style={styles.weeklyBody}>
+        <View style={[styles.weeklyYAxis, { width: Y_AXIS_WIDTH }]}>
+          {Y_AXIS_STEPS.map((step) => (
+            <Text
+              key={step}
+              style={[styles.weeklyYAxisLabel, { color: theme.textMuted, top: `${100 - step}%` }]}>
+              {step}
+            </Text>
+          ))}
+        </View>
+        <View style={styles.weeklyPlotArea}>
+          {Y_AXIS_STEPS.map((step) => (
+            <View
+              key={step}
+              style={[
+                styles.weeklyGridline,
+                {
+                  backgroundColor: step === 0 ? theme.borderStrong : theme.border,
+                  top: `${100 - step}%`,
+                },
+              ]}
+            />
+          ))}
+          <View style={[styles.weeklyAxisLine, { backgroundColor: theme.border }]} />
+          <View style={styles.weeklyPlot}>
+            {operatingDays.map((day, index) => {
+              const percentage = Math.min(100, Math.max(0, day.occupancy_percentage));
+
+              return (
+                <Pressable
+                  key={day.date}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${formatDayLabel(day.date)}, ${percentage}% occupancy`}
+                  accessibilityHint="Hold to show the occupancy percentage"
+                  onPressIn={() => setPressedDate(day.date)}
+                  onPressOut={() => setPressedDate(null)}
+                  style={styles.weeklyBarColumn}>
+                  <Text
+                    variant="label"
+                    style={[
+                      styles.weeklyBarValue,
+                      { bottom: `${percentage}%` },
+                      pressedDate !== day.date && styles.weeklyValueHidden,
+                    ]}
+                    numberOfLines={1}>
+                    {Math.round(percentage)}%
+                  </Text>
+                  {percentage > 0 ? (
+                    <View
+                      style={[
+                        styles.occupancyBarFill,
+                        {
+                          backgroundColor: palette[index % palette.length],
+                          height: `${percentage}%`,
+                        },
+                      ]}
+                    />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+      <View style={[styles.weeklyLabels, { paddingLeft: Y_AXIS_WIDTH + Spacing.xs, paddingRight: Spacing.xs }]}>
         {operatingDays.map((day) => {
-          const percentage = Math.min(100, Math.max(0, day.occupancy_percentage));
+          const isToday = day.date === today;
 
           return (
-            <Pressable
+            <Text
               key={day.date}
-              accessibilityRole="button"
-              accessibilityLabel={`${formatDayLabel(day.date)}, ${percentage}% occupancy`}
-              accessibilityHint="Hold to show the occupancy percentage"
-              onPressIn={() => setPressedDate(day.date)}
-              onPressOut={() => setPressedDate(null)}
-              style={styles.movementDay}>
-              <OccupancyBar
-                percentage={percentage}
-                visible={pressedDate === day.date}
-                color={theme.chartBar}
-                trackColor={theme.surfaceSunken}
-              />
-            </Pressable>
+              variant="caption"
+              color="textMuted"
+              style={[styles.weeklyLabel, isToday && { color: theme.primary, fontWeight: '600' }]}
+              numberOfLines={1}>
+              {isToday ? 'Today' : formatDayLabel(day.date)}
+            </Text>
           );
         })}
-      </View>
-      <View style={styles.weeklyLabels}>
-        {operatingDays.map((day) => (
-          <Text
-            key={day.date}
-            variant="caption"
-            color="textMuted"
-            style={styles.weeklyLabel}
-            numberOfLines={1}>
-            {formatDayLabel(day.date)}
-          </Text>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function OccupancyBar({
-  percentage,
-  visible,
-  color,
-  trackColor,
-}: {
-  percentage: number;
-  visible: boolean;
-  color: string;
-  trackColor: string;
-}) {
-  return (
-    <View style={styles.movementBarColumn}>
-      <Text
-        variant="label"
-        style={[styles.weeklyValue, !visible && styles.weeklyValueHidden]}>
-        {percentage}%
-      </Text>
-      <View style={[styles.occupancyBarTrack, { backgroundColor: trackColor }]}>
-        {percentage > 0 ? (
-          <View
-            style={[
-              styles.occupancyBarFill,
-              { backgroundColor: color, height: `${percentage}%` },
-            ]}
-          />
-        ) : null}
       </View>
     </View>
   );
@@ -236,169 +246,241 @@ function formatDayLabel(date: string) {
   return new Intl.DateTimeFormat('en', { weekday: 'short' }).format(parsed);
 }
 
+function formatLocalIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function formatDateDmy(date: string) {
   const [year, month, day] = date.split('-');
   return year && month && day ? `${day}-${month}-${year}` : date;
 }
 
-function occupancyRingDataUri({
-  size,
-  strokeWidth,
-  percentage,
-  trackColor,
-  progressColor,
-}: {
-  size: number;
-  strokeWidth: number;
-  percentage: number;
-  trackColor: string;
-  progressColor: string;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const center = size / 2;
-  const circumference = 2 * Math.PI * radius;
-  const progressLength = (percentage / 100) * circumference;
-  const progressCircle =
-    percentage <= 0
-      ? ''
-      : `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${progressColor}" stroke-width="${strokeWidth}" stroke-linecap="round"${
-          percentage < 100
-            ? ` stroke-dasharray="${progressLength} ${circumference - progressLength}"`
-            : ''
-        } transform="rotate(-90 ${center} ${center})"/>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${trackColor}" stroke-width="${strokeWidth}"/>${progressCircle}</svg>`;
-
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-function OccupancyContent({
-  occupancy,
-  ringSize,
-}: {
-  occupancy: DashboardOccupancy;
-  ringSize: number;
-}) {
+function ParkingSpaceStatus({ metrics }: { metrics: DashboardMetrics }) {
   const theme = useTheme();
-  const percentage = Math.min(100, Math.max(0, occupancy.percentage));
+  const total = Math.max(0, metrics.total_spaces);
+  const inactive = Math.max(0, total - Math.max(0, metrics.active_spaces));
+  const statuses = [
+    { label: 'Occupied', value: metrics.occupied_spaces, color: theme.success },
+    { label: 'Available', value: metrics.available_spaces, color: theme.primary },
+    { label: 'Maintenance', value: metrics.maintenance_spaces, color: theme.warning },
+    { label: 'Blocked', value: metrics.blocked_spaces, color: theme.danger },
+    { label: 'Inactive', value: inactive, color: theme.textMuted },
+  ];
 
   return (
-    <View style={styles.occupancyBody}>
-      <OccupancyRing size={ringSize} percentage={percentage} />
-      <View style={styles.occupancyDetails}>
-        <View style={styles.occupancyHeadline}>
-          <Text variant="heading" style={styles.occupancyCount}>
-            {occupancy.occupied_bays} of {occupancy.total_bays}
-          </Text>
-          <Text variant="body" color="textSecondary">
-            bays occupied
-          </Text>
-        </View>
-        <View style={[styles.progressTrack, { backgroundColor: theme.surfaceSunken }]}>
-          <View
-            style={[
-              styles.progressFill,
-              { backgroundColor: theme.success, width: `${percentage}%` },
-            ]}
-          />
-        </View>
-        <View style={styles.occupancyLegend}>
-          <OccupancyLegend
-            color={theme.success}
-            label="Occupied"
-            value={`${occupancy.occupied_bays} bays`}
-          />
-          <OccupancyLegend
-            color={theme.borderStrong}
-            label="Available"
-            value={`${occupancy.available_bays} bays`}
-          />
-        </View>
+    <View
+      accessibilityRole="summary"
+      accessibilityLabel={`Parking space status: ${statuses
+        .map((status) => `${status.label}, ${status.value}`)
+        .join('; ')}`}
+      style={styles.parkingStatus}>
+      <View style={styles.parkingStatusList}>
+        {statuses.map((status) => {
+          const safeValue = Math.max(0, status.value);
+          const percentage = total > 0 ? Math.min(100, (safeValue / total) * 100) : 0;
+
+          return (
+            <View key={status.label} style={styles.parkingStatusRow}>
+              <View style={styles.parkingStatusLabelRow}>
+                <Text variant="caption" color="textSecondary">
+                  {status.label}
+                </Text>
+                <Text variant="caption" style={styles.parkingStatusPercentage}>
+                  {formatPercentage(percentage)}
+                </Text>
+              </View>
+              <View
+                style={[styles.parkingStatusTrack, { backgroundColor: theme.surfaceSunken }]}>
+                {percentage > 0 ? (
+                  <View
+                    style={[
+                      styles.parkingStatusFill,
+                      { backgroundColor: status.color, width: `${percentage}%` },
+                    ]}
+                  />
+                ) : null}
+              </View>
+            </View>
+          );
+        })}
       </View>
     </View>
   );
 }
 
-function OccupancyRing({ size, percentage }: { size: number; percentage: number }) {
+function MovementOverview({
+  checkIns,
+  checkOuts,
+  ringSize,
+}: {
+  checkIns: number;
+  checkOuts: number;
+  ringSize: number;
+}) {
   const theme = useTheme();
-  const strokeWidth = size < 140 ? 12 : 15;
-  const ringUri = occupancyRingDataUri({
-    size,
-    strokeWidth,
-    percentage,
+  const safeCheckIns = Math.max(0, checkIns);
+  const safeCheckOuts = Math.max(0, checkOuts);
+  const total = safeCheckIns + safeCheckOuts;
+  const checkInPercentage = total > 0 ? (safeCheckIns / total) * 100 : 0;
+  const checkOutPercentage = total > 0 ? (safeCheckOuts / total) * 100 : 0;
+  const ringUri = movementRingDataUri({
+    size: ringSize,
+    strokeWidth: ringSize < 120 ? 12 : 14,
+    checkInPercentage,
+    checkOutPercentage,
     trackColor: theme.surfaceSunken,
-    progressColor: theme.success,
+    checkInColor: theme.success,
+    checkOutColor: theme.primary,
   });
 
   return (
     <View
       accessibilityRole="summary"
-      accessibilityLabel={`${percentage}% occupied`}
-      style={[styles.ring, { width: size, height: size }]}>
-      <Image
-        pointerEvents="none"
-        source={{ uri: ringUri }}
-        contentFit="contain"
-        cachePolicy="none"
-        style={[styles.ringGraphic, { width: size, height: size }]}
-      />
-      <View style={styles.ringLabel}>
-        <Text
-          variant="display"
-          style={[styles.ringPercentage, size < 140 && styles.ringPercentageCompact]}
-          numberOfLines={1}>
-          {percentage}%
-        </Text>
-        <Text variant="caption" color="textSecondary">
-          Occupied
-        </Text>
+      accessibilityLabel={`${total} movements today: ${safeCheckIns} check-ins and ${safeCheckOuts} check-outs`}
+      style={styles.movementOverview}>
+      <View style={styles.movementMain}>
+        <View
+          style={[styles.movementRing, { width: ringSize, height: ringSize }]}>
+          <Image
+            pointerEvents="none"
+            source={{ uri: ringUri }}
+            contentFit="contain"
+            cachePolicy="none"
+            style={{ width: ringSize, height: ringSize }}
+          />
+          <View style={styles.movementRingLabel}>
+            <Text variant="display" style={styles.movementRingValue} numberOfLines={1}>
+              {total}
+            </Text>
+            <Text variant="caption" color="textMuted" style={styles.movementRingCaption}>
+              Total{ringSize >= 120 ? '\nmovements' : ''}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.movementMetrics}>
+          <MovementMetricCard
+            icon="carIn"
+            label="Check-ins"
+            value={safeCheckIns}
+            percentage={checkInPercentage}
+            color={theme.success}
+            softColor={theme.successSoft}
+          />
+          <MovementMetricCard
+            icon="carOut"
+            label="Check-outs"
+            value={safeCheckOuts}
+            percentage={checkOutPercentage}
+            color={theme.primary}
+            softColor={theme.primarySoft}
+          />
+        </View>
       </View>
+
     </View>
   );
 }
 
-function OccupancyLegend({ color, label, value }: { color: string; label: string; value: string }) {
-  return (
-    <View style={styles.occupancyLegendItem}>
-      <View style={styles.occupancyLegendLabel}>
-        <View style={[styles.occupancyLegendDot, { backgroundColor: color }]} />
-        <Text variant="caption" color="textSecondary">
-          {label}
-        </Text>
-      </View>
-      <Text variant="caption" color="textMuted" style={styles.occupancyLegendValue}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function ComparisonBar({
+function MovementMetricCard({
+  icon,
   label,
   value,
-  max,
+  percentage,
   color,
+  softColor,
 }: {
+  icon: IconName;
   label: string;
   value: number;
-  max: number;
+  percentage: number;
   color: string;
+  softColor: string;
 }) {
   const theme = useTheme();
-  const percentage = Math.min(100, Math.max(0, (value / max) * 100));
+  const safePercentage = Math.min(100, Math.max(0, percentage));
 
   return (
-    <View style={styles.comparison}>
-      <View style={styles.comparisonLabel}>
-        <Text variant="label" color="textSecondary">
-          {label}
+    <View
+      style={[
+        styles.movementMetricCard,
+        { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
+      ]}>
+      <View style={styles.movementMetricTop}>
+        <View style={[styles.movementMetricIcon, { backgroundColor: softColor }]}>
+          <Icon name={icon} size={17} color={color} />
+        </View>
+        <View style={styles.movementMetricCopy}>
+          <Text variant="label" numberOfLines={1}>
+            {label}
+          </Text>
+          <View style={styles.movementPercentageRow}>
+            <Text variant="caption" style={{ color }}>
+              {formatPercentage(safePercentage)}
+            </Text>
+            <Text variant="caption" color="textMuted">
+              of total
+            </Text>
+          </View>
+        </View>
+        <Text variant="heading" style={styles.movementMetricValue} numberOfLines={1}>
+          {value}
         </Text>
-        <Text variant="label">{value}</Text>
       </View>
-      <View style={[styles.comparisonTrack, { backgroundColor: theme.surfaceSunken }]}>
-        <View style={[styles.comparisonFill, { width: `${percentage}%`, backgroundColor: color }]} />
+      <View
+        style={[styles.movementMetricTrack, { backgroundColor: theme.surfaceSunken }]}>
+        <View
+          style={[
+            styles.movementMetricFill,
+            { width: `${safePercentage}%`, backgroundColor: color },
+          ]}
+        />
       </View>
     </View>
   );
+}
+
+function formatPercentage(value: number) {
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded}%`;
+}
+
+function movementRingDataUri({
+  size,
+  strokeWidth,
+  checkInPercentage,
+  checkOutPercentage,
+  trackColor,
+  checkInColor,
+  checkOutColor,
+}: {
+  size: number;
+  strokeWidth: number;
+  checkInPercentage: number;
+  checkOutPercentage: number;
+  trackColor: string;
+  checkInColor: string;
+  checkOutColor: string;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const center = size / 2;
+  const circumference = 2 * Math.PI * radius;
+  const checkInLength = (Math.min(100, Math.max(0, checkInPercentage)) / 100) * circumference;
+  const checkOutLength = (Math.min(100, Math.max(0, checkOutPercentage)) / 100) * circumference;
+  const checkInArc =
+    checkInLength > 0
+      ? `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${checkInColor}" stroke-width="${strokeWidth}" stroke-dasharray="${checkInLength} ${circumference - checkInLength}" transform="rotate(-90 ${center} ${center})"/>`
+      : '';
+  const checkOutArc =
+    checkOutLength > 0
+      ? `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${checkOutColor}" stroke-width="${strokeWidth}" stroke-dasharray="${checkOutLength} ${circumference - checkOutLength}" stroke-dashoffset="${-checkInLength}" transform="rotate(-90 ${center} ${center})"/>`
+      : '';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${trackColor}" stroke-width="${strokeWidth}"/>${checkInArc}${checkOutArc}</svg>`;
+
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 const styles = StyleSheet.create({
@@ -406,40 +488,46 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   weekEndingLabel: { fontSize: 10, lineHeight: 13 },
   viewport: { overflow: 'hidden' },
-  slide: { height: '100%', justifyContent: 'space-between', paddingRight: 1 },
-  occupancySlide: { justifyContent: 'center' },
+  slide: { justifyContent: 'space-between', paddingRight: 1 },
   weeklyChart: { flex: 1, gap: 6 },
-  weeklyPlot: { flex: 1, flexDirection: 'row', alignItems: 'stretch', gap: Spacing.sm, paddingHorizontal: Spacing.xs },
-  movementDay: { flex: 1, minWidth: 0, height: '100%', flexDirection: 'row', alignItems: 'stretch', justifyContent: 'center', gap: 4 },
-  movementBarColumn: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
-  occupancyBarTrack: { flex: 1, width: 17, justifyContent: 'flex-end', overflow: 'hidden', borderRadius: Radius.pill },
-  occupancyBarFill: { width: '100%', borderRadius: Radius.pill },
-  weeklyValue: { minWidth: 64, textAlign: 'center', fontSize: 11, lineHeight: 14 },
   weeklyValueHidden: { opacity: 0 },
+  weeklyBody: { flex: 1, flexDirection: 'row', marginTop: 14 },
+  weeklyYAxis: { position: 'relative' },
+  weeklyYAxisLabel: { position: 'absolute', right: 6, marginTop: -6, fontSize: 10, lineHeight: 12 },
+  weeklyPlotArea: { flex: 1, position: 'relative' },
+  weeklyGridline: { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth },
+  weeklyAxisLine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: StyleSheet.hairlineWidth },
+  weeklyPlot: { flex: 1, flexDirection: 'row', alignItems: 'stretch', gap: Spacing.sm, paddingHorizontal: Spacing.xs },
+  weeklyBarColumn: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'flex-end' },
+  weeklyBarValue: { position: 'absolute', left: 0, right: 0, marginBottom: 4, textAlign: 'center', fontSize: 11, lineHeight: 14 },
+  occupancyBarFill: { width: 22, borderTopLeftRadius: Radius.sm, borderTopRightRadius: Radius.sm },
   weeklyLabels: { flexDirection: 'row' },
   weeklyLabel: { flex: 1, minWidth: 0, textAlign: 'center', fontSize: 10, lineHeight: 13 },
   weeklyEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  comparison: { gap: 6 },
-  comparisonLabel: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  comparisonTrack: { height: 10, borderRadius: Radius.pill, overflow: 'hidden' },
-  comparisonFill: { height: '100%', borderRadius: Radius.pill },
+  movementOverview: { flex: 1, justifyContent: 'center' },
+  movementMain: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  movementRing: { position: 'relative', flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  movementRingLabel: { position: 'absolute', alignItems: 'center' },
+  movementRingValue: { fontSize: 27, lineHeight: 30 },
+  movementRingCaption: { fontSize: 10, lineHeight: 13, textAlign: 'center' },
+  movementMetrics: { flex: 1, minWidth: 0, gap: Spacing.sm },
+  movementMetricCard: { minHeight: 58, padding: Spacing.sm, borderWidth: 1, borderRadius: Radius.md, gap: 6 },
+  movementMetricTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  movementMetricIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.sm },
+  movementMetricCopy: { flex: 1, minWidth: 0, gap: 1 },
+  movementPercentageRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  movementMetricValue: { fontSize: 20, lineHeight: 23 },
+  movementMetricTrack: { height: 5, borderRadius: Radius.pill, overflow: 'hidden' },
+  movementMetricFill: { height: '100%', borderRadius: Radius.pill },
   dots: { minHeight: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   dot: { width: 6, height: 6, borderRadius: Radius.pill },
   dotActive: { width: 18 },
-  occupancyBody: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
-  occupancyDetails: { flex: 1, minWidth: 0, gap: Spacing.md },
-  occupancyHeadline: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'nowrap', gap: 5 },
-  occupancyCount: { fontSize: 21, lineHeight: 26 },
-  progressTrack: { height: 10, borderRadius: Radius.pill, overflow: 'hidden' },
-  progressFill: { height: '100%', minWidth: 5, borderRadius: Radius.pill },
-  occupancyLegend: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: Spacing.sm },
-  occupancyLegendItem: { flex: 1, minWidth: 0, gap: 3 },
-  occupancyLegendLabel: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  occupancyLegendDot: { width: 9, height: 9, borderRadius: Radius.pill },
-  occupancyLegendValue: { paddingLeft: Spacing.lg },
-  ring: { position: 'relative', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  ringGraphic: { position: 'absolute', left: 0, top: 0 },
-  ringLabel: { alignItems: 'center', gap: 1 },
-  ringPercentage: { fontSize: 30, lineHeight: 34 },
-  ringPercentageCompact: { fontSize: 26, lineHeight: 30 },
+  parkingStatus: { flex: 1, gap: 7 },
+  parkingStatusSubtitle: { fontSize: 10, lineHeight: 13 },
+  parkingStatusList: { flex: 1, justifyContent: 'space-between' },
+  parkingStatusRow: { gap: 3 },
+  parkingStatusLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  parkingStatusPercentage: { fontWeight: '600' },
+  parkingStatusTrack: { height: 5, borderRadius: Radius.pill, overflow: 'hidden' },
+  parkingStatusFill: { height: '100%', minWidth: 4, borderRadius: Radius.pill },
 });

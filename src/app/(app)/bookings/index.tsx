@@ -111,19 +111,12 @@ const BLOCK_LINE_H = 11;
 const BLOCK_V_PADDING = 4;
 
 function fullHourLabel(h: number, compact = false): string {
-  const period = h < 12 ? 'AM' : 'PM';
-  const displayHour = h % 12 === 0 ? 12 : h % 12;
-  return `${displayHour}${compact ? '' : ':00'} ${period}`;
+  const hour = String(h).padStart(2, '0');
+  return compact ? hour : `${hour}:00`;
 }
 
 function formatCardTime(value: string): string {
-  const date = new Date(toSydneyDateTimeValue(value));
-  if (Number.isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(date);
+  return formatTime(toSydneyDateTimeValue(value));
 }
 
 type BookingSegment = {
@@ -542,7 +535,7 @@ export default function BookingsScreen() {
     const isTargetToday = toISODate(d) === toISODate(sydneyNow);
     const offset = isTargetToday
       ? Math.max((sydneyNow.getHours() - 1) * (isPhone ? PHONE_ROW_H : ROW_H), 0)
-      : 8 * (isPhone ? PHONE_ROW_H : ROW_H); // 8 AM for other days
+      : 8 * (isPhone ? PHONE_ROW_H : ROW_H); // 08:00 for other days
     setTimeout(() => vScrollRef.current?.scrollTo({ y: offset, animated: false }), 150);
   };
 

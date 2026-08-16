@@ -25,6 +25,8 @@ type Props<T extends string | number> = {
   error?: string;
   required?: boolean;
   disabled?: boolean;
+  /** Replaces the default trigger; receives the sheet opener and current option. */
+  trigger?: (open: () => void, selected: Option<T> | undefined) => React.ReactNode;
 };
 
 export function Select<T extends string | number>({
@@ -36,6 +38,7 @@ export function Select<T extends string | number>({
   error,
   required,
   disabled,
+  trigger,
 }: Props<T>) {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
@@ -44,26 +47,30 @@ export function Select<T extends string | number>({
 
   return (
     <View ref={errorScrollRef} style={styles.field}>
-      {label ? (
+      {label && !trigger ? (
         <Text variant="label" color="textSecondary">
           {label}
           {required ? <Text variant="label" tint={theme.danger}> *</Text> : null}
         </Text>
       ) : null}
-      <Pressable
-        disabled={disabled}
-        onPress={() => setOpen(true)}
-        style={({ pressed }) => [
-          styles.trigger,
-          { backgroundColor: theme.surface, borderColor: error ? theme.danger : theme.border },
-          pressed && { borderColor: theme.primary },
-          disabled && { opacity: 0.5 },
-        ]}>
-        <Text variant="body" color={selected ? 'text' : 'textMuted'} numberOfLines={1} style={styles.flex}>
-          {selected?.label ?? placeholder}
-        </Text>
-        <Icon name="chevronDown" size={18} color={theme.textMuted} />
-      </Pressable>
+      {trigger ? (
+        trigger(() => setOpen(true), selected)
+      ) : (
+        <Pressable
+          disabled={disabled}
+          onPress={() => setOpen(true)}
+          style={({ pressed }) => [
+            styles.trigger,
+            { backgroundColor: theme.surface, borderColor: error ? theme.danger : theme.border },
+            pressed && { borderColor: theme.primary },
+            disabled && { opacity: 0.5 },
+          ]}>
+          <Text variant="body" color={selected ? 'text' : 'textMuted'} numberOfLines={1} style={styles.flex}>
+            {selected?.label ?? placeholder}
+          </Text>
+          <Icon name="chevronDown" size={18} color={theme.textMuted} />
+        </Pressable>
+      )}
       {error ? (
         <Text variant="caption" tint={theme.danger}>
           {error}

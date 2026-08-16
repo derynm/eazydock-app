@@ -34,7 +34,7 @@ export function formatDateTime(iso?: string | null): string {
   if (!iso) return '—';
   const d = displayDate(iso);
   if (isNaN(d.getTime())) return '—';
-  return dtf({ day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d);
+  return dtf({ day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
 }
 
 export function formatTime(iso?: string | null): string {

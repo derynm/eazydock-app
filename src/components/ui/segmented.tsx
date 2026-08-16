@@ -30,25 +30,30 @@ const TRACK_GAP = 3;
 
 export function Segmented<T extends string>({ options, value, onChange, scrollable, activeTone = 'surface' }: Props<T>) {
   const theme = useTheme();
+  // Width of each segment, measured from its content so labels never collide.
   const [trackWidth, setTrackWidth] = useState(0);
+  const [itemWidths, setItemWidths] = useState<number[]>([]);
   const activeIndex = Math.max(0, options.findIndex((opt) => opt.value === value));
-  const progress = useSharedValue(activeIndex);
+  const indicatorX = useSharedValue(0);
+  const indicatorW = useSharedValue(0);
 
   useEffect(() => {
-    progress.value = withTiming(activeIndex, { duration: 180 });
-  }, [activeIndex, progress]);
-
-  const indicatorWidth = options.length > 0
-    ? Math.max(0, (trackWidth - TRACK_PADDING * 2 - TRACK_GAP * (options.length - 1)) / options.length)
-    : 0;
+    if (itemWidths.length !== options.length || itemWidths.some((width) => width <= 0)) return;
+    const contentWidth = itemWidths.reduce((sum, width) => sum + width, 0) + TRACK_GAP * (options.length - 1);
+    // Segments are centered in the track, so the indicator needs the same lead-in.
+    const leading = Math.max(0, (trackWidth - TRACK_PADDING * 2 - contentWidth) / 2);
+    const offsetX = leading + itemWidths.slice(0, activeIndex).reduce((sum, width) => sum + width + TRACK_GAP, TRACK_PADDING);
+    indicatorX.value = withTiming(offsetX, { duration: 180 });
+    indicatorW.value = withTiming(itemWidths[activeIndex], { duration: 180 });
+  }, [activeIndex, itemWidths, trackWidth, options.length, indicatorX, indicatorW]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
-    opacity: indicatorWidth > 0 ? 1 : 0,
-    width: indicatorWidth,
-    transform: [{ translateX: TRACK_PADDING + progress.value * (indicatorWidth + TRACK_GAP) }],
+    opacity: indicatorW.value > 0 ? 1 : 0,
+    width: indicatorW.value,
+    transform: [{ translateX: indicatorX.value }],
   }));
 
-  const items = options.map((opt) => {
+  const items = options.map((opt, index) => {
     const active = opt.value === value;
     if (scrollable) {
       return (
@@ -65,11 +70,22 @@ export function Segmented<T extends string>({ options, value, onChange, scrollab
       <Pressable
         key={opt.value}
         onPress={() => onChange(opt.value)}
+        onLayout={(event) => {
+          const { width } = event.nativeEvent.layout;
+          setItemWidths((prev) => {
+            if (Math.abs((prev[index] ?? 0) - width) < 0.5) return prev;
+            const next = [...prev];
+            next[index] = width;
+            return next;
+          });
+        }}
         style={styles.item}>
         <View style={styles.itemContent}>
           <Text
             variant="label"
-            tint={active ? (activeTone === 'primary' ? theme.onPrimary : theme.text) : theme.textSecondary}>
+            numberOfLines={1}
+            tint={active ? (activeTone === 'primary' ? theme.onPrimary : theme.text) : theme.textSecondary}
+            style={styles.itemLabel}>
             {opt.label}
           </Text>
           {opt.count != null ? (
@@ -171,7 +187,13 @@ function ScrollableSegmentItem<T extends string>({
 }
 
 const styles = StyleSheet.create({
-  track: { flexDirection: 'row', padding: TRACK_PADDING, borderRadius: Radius.md, gap: TRACK_GAP },
+  track: {
+    flexDirection: 'row',
+    padding: TRACK_PADDING,
+    borderRadius: Radius.md,
+    gap: TRACK_GAP,
+    justifyContent: 'center',
+  },
   indicator: {
     position: 'absolute',
     top: TRACK_PADDING,
@@ -181,14 +203,23 @@ const styles = StyleSheet.create({
   },
   scrollRow: { flexDirection: 'row', gap: Spacing.sm, paddingRight: Spacing.lg },
   item: {
-    flex: 1,
+    flexShrink: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
     borderRadius: Radius.sm,
     zIndex: 1,
+    overflow: 'hidden',
   },
-  itemContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+  itemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    maxWidth: '100%',
+  },
+  itemLabel: { flexShrink: 1 },
   countBadge: {
     minWidth: 20,
     height: 20,

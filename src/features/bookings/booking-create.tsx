@@ -16,7 +16,7 @@ import { AutocompleteField, Banner, Button, Card, DateTimeField, IconButton, Sec
 import { Spacing } from '@/constants/theme';
 import { lookupPlate, type ActiveTransaction } from '@/features/transactions/plate-lookup';
 import { PlateScanner } from '@/features/transactions/plate-scanner';
-import { formatPlate, timeAgo } from '@/lib/format';
+import { formatPlate, formatTime, timeAgo } from '@/lib/format';
 import { DRIVER_TYPES } from '@/lib/options';
 import { instantFromSydneyDateTimeValue, toSydneyDateTimeValue } from '@/lib/sydney-time';
 import { zodResolver } from '@/lib/zod-resolver';
@@ -68,13 +68,8 @@ function datesCoveredByRange(startsAt: string, endsAt: string): string[] {
 }
 
 function formatConflictTime(value: string): string {
-  const date = new Date(toSydneyDateTimeValue(value));
-  if (Number.isNaN(date.getTime())) return 'Unknown time';
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(date);
+  const formatted = formatTime(toSydneyDateTimeValue(value));
+  return formatted === '—' ? 'Unknown time' : formatted;
 }
 
 export function BookingCreate() {

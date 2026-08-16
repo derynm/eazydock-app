@@ -177,6 +177,15 @@ export const BookingCalendarColors = {
 
 export type ThemeColor = keyof Palette;
 
+/**
+ * Per-scheme bar-chart palettes — cycled across columns so each bar gets its
+ * own color. Kept out of `Palette` so every `ThemeColor` stays a plain string.
+ */
+export const ChartPalette: { light: string[]; dark: string[] } = {
+  light: ['#4A9CF4', '#41C77E', '#A07BEF', '#F5A83D', '#3DBBB3', '#F06BA4'],
+  dark: ['#73B2F8', '#4ADE80', '#A78BFA', '#FBBF24', '#2DD4BF', '#F472B6'],
+};
+
 /* ------------------------------------------------------------------ *
  * Scale tokens
  * ------------------------------------------------------------------ */

@@ -1,0 +1,49 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm exec *)",
+      "Bash(pnpm lint *)",
+      "Bash(cd /Users/mymac/Work/upwork/eazydock-app; rm -rf /tmp/e; pnpm exec expo export --platform ios --output-dir /tmp/e 2>&1 | grep -iE \"bundled|error:|unable to resolve|cannot find\" | head; rm -rf /tmp/e; echo done)",
+      "Bash(find /Users/mymac/Work/upwork -name \"useBrowserPlateReader.ts\" 2>/dev/null | head -5)",
+      "Read(//Users/mymac/Work/upwork/**)",
+      "Bash(cp /Users/mymac/Work/upwork/eazy-parking-management/public/models/license-plate-detector.onnx /Users/mymac/Work/upwork/eazydock-app/assets/models/)",
+      "Bash(cp /Users/mymac/Work/upwork/eazy-parking-management/public/models/plate-ocr.onnx /Users/mymac/Work/upwork/eazydock-app/assets/models/)",
+      "Bash(pnpm typecheck *)",
+      "Bash(ls /usr/local/bin/pnpm /usr/local/bin/npx ~/.nvm/versions/node/*/bin/pnpm 2>/dev/null | head -5; ls ~/.volta/bin/ 2>/dev/null | head -5)",
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/mymac/.volta/**)",
+      "Bash(PATH=/Users/mymac/.nvm/versions/node/v22.22.0/bin:__TRACKED_VAR__ pnpm --dir /Users/mymac/Work/upwork/eazydock-app typecheck)",
+      "Bash(node -e \"require\\('./node_modules/.bin/tsc'\\)\")",
+      "Bash(~/.nvm/versions/node/v20.17.0/bin/node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(npx tsc *)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(which node *)",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//Users/mymac/.nvm/versions/node/**)",
+      "Bash(zsh -lic \"pnpm typecheck\")",
+      "Bash(zsh -lic \"npx --yes tsc --noEmit -p . 2>&1 | tail -60\")",
+      "Bash(zsh -lic 'nvm current; echo PATH=$PATH')",
+      "Bash(zsh -lic \"nvm ls\")",
+      "Bash(zsh -lic \"nvm use 22.22.0 2>&1; node -v; corepack enable 2>&1; pnpm -v 2>&1; pnpm typecheck 2>&1 | tail -80\")",
+      "Bash(zsh -lic \"nvm use 22.22.0 >/dev/null 2>&1; ./node_modules/.bin/tsc --noEmit 2>&1 | grep -i check-in\")",
+      "Read(//Users/mymac/.nvm/**)",
+      "Read(//Users/mymac/**)",
+      "WebSearch",
+      "Bash(./gradlew app:assembleDebug -x lint -x test --configure-on-demand --build-cache -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=arm64-v8a)",
+      "Bash(zsh -lc 'node -v && which node')",
+      "Bash(zsh -lc 'echo \"HOMEBREW_PREFIX=$HOMEBREW_PREFIX\"; echo \"NVM_DIR=$NVM_DIR\"; ls -la \"$HOMEBREW_PREFIX/opt/nvm/nvm.sh\" 2>&1; type nvm 2>&1')",
+      "Bash(zsh -lc 'source /opt/homebrew/opt/nvm/nvm.sh; type nvm; nvm current')",
+      "Bash(zsh -lc 'echo BEFORE; source ~/.zshrc; echo AFTER; type nvm')",
+      "Bash(sips --help)",
+      "Bash(sips -s format webp assets/images/android-icon-monochrome.png --out /tmp/test-mono.webp)",
+      "Bash(python3 -c \"import PIL; print\\(PIL.__version__\\)\")",
+      "Bash(sips -g all assets/images/android-icon-monochrome.png)",
+      "Bash(python3 -)",
+      "Bash(python3 -c \"import os; print\\(os.path.relpath\\('assets/images','src/components'\\)\\)\")",
+      "Bash(bash -n scripts/build-android.sh)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}

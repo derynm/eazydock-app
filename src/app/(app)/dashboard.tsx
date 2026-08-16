@@ -26,7 +26,7 @@ export default function Dashboard() {
   const theme = useTheme();
   const router = useRouter();
   const company = useActiveCompany();
-  const { user, activeCompanyId, selectedBuilding } = useSession();
+  const { activeCompanyId, selectedBuilding } = useSession();
   const { can } = usePermissions();
   const { width, isTablet } = useResponsive();
   const buildingId = selectedBuilding?.id;
@@ -73,13 +73,6 @@ export default function Dashboard() {
       : `${contextName} Admin`
     : undefined;
   const metrics = data?.metrics;
-  const initials = user?.name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase();
 
   return (
     <Screen
@@ -87,22 +80,38 @@ export default function Dashboard() {
       subtitle={subtitle}
       compactHeader
       headerRight={
-        initials ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open profile"
-            onPress={() => router.push('/profile' as never)}
-            style={({ pressed }) => [
-              styles.headerAvatar,
-              { backgroundColor: theme.primarySoft },
-              isTablet && styles.headerAvatarTablet,
-              pressed && styles.headerAvatarPressed,
-            ]}>
-            <Text variant="label" tint={theme.primary}>
-              {initials}
-            </Text>
-          </Pressable>
-        ) : undefined
+        <Select
+          label="Parking area"
+          value={parkingAreaId ?? 0}
+          options={parkingAreaOptions}
+          onChange={(value) => setParkingAreaFilter({
+            companyId: activeCompanyId,
+            buildingId,
+            areaId: value || null,
+          })}
+          placeholder="All parking areas"
+          trigger={(open, selected) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Filter parking area. ${selected?.label ?? 'All parking areas'}`}
+              onPress={open}
+              style={({ pressed }) => [
+                styles.headerFilter,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: pressed ? theme.surfaceSunken : theme.surface,
+                },
+                isTablet && styles.headerFilterTablet,
+                pressed && styles.headerFilterPressed,
+              ]}>
+              <Icon
+                name="filter"
+                size={isTablet ? 18 : 16}
+                color={parkingAreaId ? theme.primary : theme.textSecondary}
+              />
+            </Pressable>
+          )}
+        />
       }>
       <ScrollView
         contentContainerStyle={[styles.content, !isTablet && styles.contentPhone]}
@@ -115,21 +124,6 @@ export default function Dashboard() {
             colors={[theme.primary]}
           />
         }>
-        <View style={[styles.filterRow, !isTablet && styles.filterRowPhone]}>
-          <View style={[styles.filterField, !isTablet && styles.filterFieldPhone]}>
-            <Select
-              value={parkingAreaId ?? 0}
-              options={parkingAreaOptions}
-              onChange={(value) => setParkingAreaFilter({
-                companyId: activeCompanyId,
-                buildingId,
-                areaId: value || null,
-              })}
-              placeholder="All parking areas"
-            />
-          </View>
-        </View>
-
         {isError && !data ? (
           <Banner
             title="Couldn’t load dashboard"
@@ -186,7 +180,6 @@ export default function Dashboard() {
               ]}>
               <DashboardChartCarousel
                 metrics={metrics}
-                occupancy={data.occupancy}
                 dailyParkingHours={data.current_week_parking_hours?.daily ?? []}
                 ringSize={isTablet ? 184 : width < 380 ? 120 : 130}
               />
@@ -207,8 +200,8 @@ export default function Dashboard() {
                   <QuickAction
                     icon="arrowDownRight"
                     title="New check-in"
-                    description="Record vehicle arrival"
                     color={theme.primary}
+                    softColor={theme.primarySoft}
                     onPress={() => router.push('/transactions/check-in')}
                     compact={!isTablet}
                   />
@@ -217,8 +210,8 @@ export default function Dashboard() {
                   <QuickAction
                     icon="bookings"
                     title="New booking"
-                    description="Schedule a loading dock"
                     color={theme.success}
+                    softColor={theme.successSoft}
                     onPress={() => router.push('/bookings/create')}
                     compact={!isTablet}
                   />
@@ -227,8 +220,8 @@ export default function Dashboard() {
                   <QuickAction
                     icon="incident"
                     title="Incidents"
-                    description="Review reported incidents"
                     color={theme.danger}
+                    softColor={theme.dangerSoft}
                     onPress={() => router.push('/incidents')}
                     compact={!isTablet}
                   />
@@ -287,14 +280,6 @@ function DashboardKpi({
         Shadow.xs as object,
       ]}>
       <View style={styles.kpiHeading}>
-        <Text
-          variant="display"
-          style={[styles.kpiValue, compact && styles.kpiValueCompact]}
-          adjustsFontSizeToFit
-          minimumFontScale={0.85}
-          numberOfLines={1}>
-          {value}
-        </Text>
         <View
           style={[
             styles.kpiIcon,
@@ -303,6 +288,12 @@ function DashboardKpi({
           ]}>
           <Icon name={icon} size={compact ? 19 : 23} color={color} />
         </View>
+        <Text
+          variant="display"
+          style={[styles.kpiValue, compact && styles.kpiValueCompact]}
+          numberOfLines={1}>
+          {value}
+        </Text>
       </View>
       <View style={styles.kpiDetails}>
         <Text
@@ -356,15 +347,15 @@ function DashboardKpi({
 function QuickAction({
   icon,
   title,
-  description,
   color,
+  softColor,
   onPress,
   compact,
 }: {
   icon: IconName;
   title: string;
-  description: string;
   color: string;
+  softColor: string;
   onPress: () => void;
   compact: boolean;
 }) {
@@ -372,7 +363,7 @@ function QuickAction({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}. ${description}`}
+      accessibilityLabel={title}
       onPress={onPress}
       style={({ pressed }) => [
         styles.quickAction,
@@ -383,27 +374,21 @@ function QuickAction({
         style={[
           styles.quickIcon,
           compact && styles.quickIconCompact,
-          { backgroundColor: color },
+          { backgroundColor: softColor },
         ]}>
         <Icon
           name={icon}
-          size={compact ? 15 : 23}
-          color={theme.surface}
+          size={compact ? 17 : 22}
+          color={color}
           weight="semibold"
         />
       </View>
-      <View style={styles.quickText}>
-        <Text variant="label" style={compact && styles.quickTitleCompact} numberOfLines={2}>
-          {title}
-        </Text>
-        <Text
-          variant="caption"
-          color="textSecondary"
-          style={compact && styles.quickDescriptionCompact}
-          numberOfLines={3}>
-          {description}
-        </Text>
-      </View>
+      <Text
+        variant="label"
+        style={[styles.quickTitle, compact && styles.quickTitleCompact]}
+        numberOfLines={2}>
+        {title}
+      </Text>
     </Pressable>
   );
 }
@@ -590,22 +575,16 @@ const styles = StyleSheet.create({
     gap: Spacing.xl,
   },
   contentPhone: { padding: Spacing.lg, gap: Spacing.md },
-  filterRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  filterRowPhone: { justifyContent: 'flex-start' },
-  filterField: { width: 360, maxWidth: '100%' },
-  filterFieldPhone: { flex: 1, width: '100%' },
-  headerAvatar: {
+  headerFilter: {
     width: 36,
     height: 36,
-    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerAvatarTablet: { width: 40, height: 40 },
-  headerAvatarPressed: { opacity: 0.7 },
+  headerFilterTablet: { width: 40, height: 40 },
+  headerFilterPressed: { opacity: 0.7 },
   dashboardCard: { borderWidth: 1 },
   kpiRow: { flexDirection: 'row', alignItems: 'stretch', gap: Spacing.sm },
   kpiRowCompact: { gap: 6 },
@@ -618,17 +597,15 @@ const styles = StyleSheet.create({
   },
   kpiCardCompact: {
     minHeight: 136,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     paddingHorizontal: 10,
     paddingTop: 10,
     paddingBottom: 18,
   },
   kpiHeading: {
     width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.xs,
+    alignItems: 'flex-start',
+    gap: Spacing.md,
   },
   kpiDetails: { width: '100%', gap: Spacing.xs },
   kpiIcon: {
@@ -640,7 +617,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   kpiIconCompact: { width: 34, height: 34 },
-  kpiValue: { minWidth: 0, flexShrink: 1, fontSize: 36, lineHeight: 40 },
+  kpiValue: { width: '100%', flexShrink: 0, fontSize: 36, lineHeight: 40 },
   kpiValueCompact: { fontSize: 24, lineHeight: 28 },
   kpiLabel: { fontSize: 15, lineHeight: 19 },
   kpiLabelCompact: { fontSize: 11, lineHeight: 15 },
@@ -685,19 +662,20 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     padding: Spacing.md,
     gap: Spacing.md,
-  },
-  quickActionCompact: { minHeight: 100, borderRadius: Radius.md, padding: Spacing.sm, gap: 6 },
-  quickIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickIconCompact: { width: 30, height: 30 },
-  quickText: { gap: 2 },
+  quickActionCompact: { minHeight: 80, borderRadius: Radius.md, padding: Spacing.sm, gap: 6 },
+  quickIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickIconCompact: { width: 34, height: 34 },
+  quickTitle: { textAlign: 'center' },
   quickTitleCompact: { fontSize: 12, lineHeight: 16 },
-  quickDescriptionCompact: { fontSize: 10, lineHeight: 13 },
   onSiteHeader: {
     minHeight: 58,
     paddingHorizontal: Spacing.lg,
