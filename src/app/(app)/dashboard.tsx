@@ -181,6 +181,7 @@ export default function Dashboard() {
               <DashboardChartCarousel
                 metrics={metrics}
                 dailyParkingHours={data.current_week_parking_hours?.daily ?? []}
+                dailyMovement={data.daily_movement_trend ?? []}
                 ringSize={isTablet ? 184 : width < 380 ? 120 : 130}
               />
             </Card>

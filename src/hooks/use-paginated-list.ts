@@ -30,6 +30,7 @@ export function usePaginatedList<T>(
   return {
     items,
     total,
+    firstPage: query.data?.pages[0],
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error as Error | null,

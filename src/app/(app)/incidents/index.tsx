@@ -1,92 +1,97 @@
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { listIncidents } from '@/api/incidents';
+import { getIncidentFormData, listIncidents } from '@/api/incidents';
+import type { IncidentListResponse, IncidentSeverity } from '@/api/types';
+import { useSession } from '@/auth/session';
 import { ResponsiveListDetail } from '@/components/responsive-list-detail';
 import { Screen } from '@/components/screen';
-import { Badge, Button, DateField, FilterSheet, Icon, IconButton, ListRow, Segmented } from '@/components/ui';
+import { Badge, Button, Card, DateField, FilterSheet, Icon, IconButton, ListRow, SearchBar, Select, Text } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { IncidentDetail } from '@/features/incidents/incident-detail';
-import { IncidentForm } from '@/features/incidents/incident-form';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { usePaginatedList } from '@/hooks/use-paginated-list';
 import { usePermissions } from '@/hooks/use-permissions';
-import { useResponsive } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { formatDate, titleCase } from '@/lib/format';
+import { formatDateTime, titleCase } from '@/lib/format';
 import { statusMeta } from '@/lib/status';
 
-const STATUS_FILTERS = [
-  { value: '', label: 'All' },
+const STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  { value: 'draft', label: 'Draft' },
   { value: 'open', label: 'Open' },
+  { value: 'investigating', label: 'Investigating' },
   { value: 'resolved', label: 'Resolved' },
   { value: 'cancelled', label: 'Cancelled' },
-] as const;
+];
 
-const TYPE_FILTERS = [
-  { value: '', label: 'All types' },
-  { value: 'overstay', label: 'Overstay' },
-  { value: 'damage', label: 'Damage' },
-  { value: 'blocked_space', label: 'Blocked' },
-  { value: 'unauthorised_vehicle', label: 'Unauthorised' },
-  { value: 'safety', label: 'Safety' },
-  { value: 'other', label: 'Other' },
-] as const;
+const severityCards: { key: IncidentSeverity | ''; label: string; icon: 'alert' | 'warning' | 'info' | 'checkCircle' | 'incident' }[] = [
+  { key: '', label: 'Total', icon: 'incident' },
+  { key: 'critical', label: 'Critical', icon: 'alert' },
+  { key: 'high', label: 'High', icon: 'warning' },
+  { key: 'medium', label: 'Medium', icon: 'info' },
+  { key: 'low', label: 'Low', icon: 'checkCircle' },
+];
 
 export default function IncidentsScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { activeCompanyId, selectedBuilding } = useSession();
   const { can } = usePermissions();
-  const { isTablet } = useResponsive();
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [status, setStatus] = useState('open');
   const [incidentType, setIncidentType] = useState('');
+  const [severity, setSeverity] = useState<IncidentSeverity | ''>('');
+  const [areaId, setAreaId] = useState<number | null>(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [creating, setCreating] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const activeFilterCount =
-    (status && status !== 'open' ? 1 : 0) +
-    (incidentType ? 1 : 0) +
-    (dateFrom ? 1 : 0) +
-    (dateTo ? 1 : 0);
-
+  const { data: formData } = useQuery({ queryKey: ['incident-form-data', activeCompanyId], queryFn: getIncidentFormData });
+  const buildingId = selectedBuilding?.id ?? null;
+  const activeFilterCount = (status && status !== 'open' ? 1 : 0) + (incidentType ? 1 : 0) + (severity ? 1 : 0) + (areaId ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
   const list = usePaginatedList(['incidents'], listIncidents, {
+    search: debouncedSearch || undefined,
     status: status || undefined,
     incident_type: incidentType || undefined,
+    severity: severity || undefined,
+    building_id: buildingId ?? undefined,
+    parking_area_id: areaId ?? undefined,
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
   });
+  const summary = (list.firstPage as IncidentListResponse | undefined)?.summary ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 };
+
+  const listHeader = (
+    <View style={styles.listHeader}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.summaryRow}>
+        {severityCards.map((item) => {
+          const selected = severity === item.key;
+          const meta = statusMeta(item.key || 'open');
+          return (
+            <Pressable key={item.label} onPress={() => setSeverity(item.key)} accessibilityRole="button" accessibilityState={{ selected }}>
+              <Card style={[styles.summaryCard, selected && { borderColor: theme.primary, backgroundColor: theme.primarySoft }]}>
+                <View style={styles.summaryTop}><Icon name={item.icon} size={17} color={selected ? theme.primary : item.key ? ({ critical: theme.danger, high: theme.warning, medium: theme.info, low: theme.textMuted } as const)[item.key] : theme.primary} /><Text variant="display" style={styles.summaryValue}>{item.key ? summary[item.key] : summary.total}</Text></View>
+                <Text variant="caption" tint={selected ? theme.primary : meta.tone === 'danger' ? theme.danger : theme.textSecondary}>{item.label}</Text>
+              </Card>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+      <Text variant="caption" color="textMuted">{list.total} result{list.total === 1 ? '' : 's'} · tap a severity card to filter</Text>
+    </View>
+  );
 
   return (
     <Screen
       title="Incidents"
-      headerRight={
-        <View style={styles.headerRight}>
-          <View>
-            <IconButton
-              name="filter"
-              accessibilityLabel="Open filters"
-              surface
-              onPress={() => setFilterOpen(true)}
-              color={activeFilterCount > 0 ? theme.primary : undefined}
-            />
-            {activeFilterCount > 0 ? (
-              <View style={[styles.badge, { backgroundColor: theme.primary }]} />
-            ) : null}
-          </View>
-          {can('operations.incidents', 'create') ? (
-            isTablet ? (
-              <Button title="Report incident" icon="add" size="sm" onPress={() => setCreating(true)} />
-            ) : (
-              <IconButton name="add" accessibilityLabel="Report incident" surface onPress={() => setCreating(true)} />
-            )
-          ) : null}
-        </View>
-      }>
+      toolbar={<View style={styles.toolbarRow}><View style={styles.flex}><SearchBar value={search} onChangeText={setSearch} placeholder="Search number, location, plate, or driver" /></View><View><IconButton name="filter" accessibilityLabel="Open filters" surface onPress={() => setFilterOpen(true)} color={activeFilterCount > 0 ? theme.primary : undefined} />{activeFilterCount > 0 ? <View style={[styles.filterDot, { backgroundColor: theme.primary }]} /> : null}</View>{can('operations.incidents', 'create') ? <IconButton name="add" accessibilityLabel="Report incident" surface onPress={() => router.push('/incidents/create' as never)} /> : null}</View>}>
       <ResponsiveListDetail
         items={list.items}
-        getId={(i) => i.id}
+        getId={(incident) => incident.id}
         loading={list.isLoading}
         errorMessage={list.isError ? list.error?.message : undefined}
         onRetry={list.refetch}
@@ -95,69 +100,40 @@ export default function IncidentsScreen() {
         onEndReached={() => list.hasNextPage && list.fetchNextPage()}
         loadingMore={list.isFetchingNextPage}
         emptyTitle="No incidents found"
-        emptyDescription={status === 'open' ? 'No open incidents — all clear.' : 'No incidents match this filter.'}
+        emptyDescription={status === 'open' ? 'No open incidents — all clear.' : 'No incidents match these filters.'}
+        listHeader={listHeader}
         onOpen={(id) => router.push(`/incidents/${id}` as never)}
         renderDetail={(id) => <IncidentDetail key={id} id={id} />}
         renderRow={(incident, { selected, onPress }) => {
-          const meta = statusMeta(incident.status);
-          const iconColor = incident.status === 'open' ? theme.warning : incident.status === 'resolved' ? theme.success : theme.textMuted;
-          const iconBg = incident.status === 'open' ? theme.warningSoft : incident.status === 'resolved' ? theme.successSoft : theme.neutralSoft;
-          return (
-            <ListRow
-              title={titleCase(incident.incident_type)}
-              subtitle={incident.description.slice(0, 80)}
-              meta={formatDate(incident.created_at)}
-              selected={selected}
-              onPress={onPress}
-              leading={
-                <View style={[styles.icon, { backgroundColor: iconBg }]}>
-                  <Icon name="incident" size={20} color={iconColor} />
-                </View>
-              }
-              trailing={<Badge label={meta.label} tone={meta.tone} size="sm" dot />}
-            />
-          );
+          const state = statusMeta(incident.is_draft ? 'draft' : incident.status);
+          const severityMeta = statusMeta(incident.severity);
+          const severityColor = incident.severity === 'critical' ? theme.danger : incident.severity === 'high' ? theme.warning : incident.severity === 'medium' ? theme.info : theme.textMuted;
+          return <ListRow title={incident.incident_no ?? 'Private draft'} subtitle={`${titleCase(incident.incident_type)} · ${incident.parking_area?.name ?? incident.location_details ?? 'Location not set'}`} meta={`${formatDateTime(incident.occurred_at)} · ${incident.description.slice(0, 64)}`} selected={selected} onPress={onPress} leading={<View style={[styles.icon, { backgroundColor: severityColor + '18' }]}><Icon name="incident" size={20} color={severityColor} /></View>} trailing={<View style={styles.rowBadges}><Badge label={severityMeta.label} tone={severityMeta.tone} size="sm" /><Badge label={state.label} tone={state.tone} size="sm" dot /></View>} />;
         }}
       />
 
       <FilterSheet visible={filterOpen} onClose={() => setFilterOpen(false)} title="Filter incidents">
-        <Segmented scrollable options={TYPE_FILTERS as never} value={incidentType} onChange={setIncidentType} />
-        <Segmented scrollable options={STATUS_FILTERS as never} value={status} onChange={setStatus} />
-        <View style={styles.dateRow}>
-          <View style={styles.dateCol}>
-            <DateField
-              label="From"
-              value={dateFrom}
-              onChange={(value) => {
-                setDateFrom(value);
-                if (value && dateTo && value > dateTo) setDateTo(value);
-              }}
-              placeholder="Date"
-            />
-          </View>
-          <View style={styles.dateCol}>
-            <DateField
-              label="To"
-              value={dateTo}
-              onChange={(value) => {
-                setDateTo(value);
-                if (value && dateFrom && value < dateFrom) setDateFrom(value);
-              }}
-              placeholder="Date"
-            />
-          </View>
-        </View>
+        <Select label="Status" value={status} options={STATUS_OPTIONS} onChange={setStatus} />
+        <Select label="Incident type" value={incidentType} options={[{ value: '', label: 'All types' }, ...(formData?.incident_types ?? [])]} onChange={setIncidentType} />
+        <Select label="Severity" value={severity} options={[{ value: '', label: 'All severities' }, ...(formData?.severities ?? [])]} onChange={(value) => setSeverity(value as IncidentSeverity | '')} />
+        <Select label="Parking area" value={areaId} options={(formData?.parking_areas ?? []).filter((item) => !buildingId || item.building_id === buildingId).map((item) => ({ value: item.id, label: item.name }))} placeholder="All areas" onChange={setAreaId} />
+        <View style={styles.dateRow}><View style={styles.flex}><DateField label="From" value={dateFrom} onChange={(value) => { setDateFrom(value); if (value && dateTo && value > dateTo) setDateTo(value); }} /></View><View style={styles.flex}><DateField label="To" value={dateTo} onChange={(value) => { setDateTo(value); if (value && dateFrom && value < dateFrom) setDateFrom(value); }} /></View></View>
+        <Button title="Reset filters" variant="ghost" onPress={() => { setStatus('open'); setIncidentType(''); setSeverity(''); setAreaId(null); setDateFrom(''); setDateTo(''); }} />
       </FilterSheet>
-
-      <IncidentForm visible={creating} incident={null} onClose={() => setCreating(false)} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  toolbarRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
+  filterDot: { position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: 4 },
+  listHeader: { gap: Spacing.sm },
+  summaryRow: { gap: Spacing.sm },
+  summaryCard: { width: 108, minHeight: 78, padding: Spacing.md, gap: Spacing.xs },
+  summaryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  summaryValue: { fontSize: 24, lineHeight: 28 },
   icon: { width: 44, height: 44, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
-  headerRight: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
-  badge: { position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: 4 },
+  rowBadges: { alignItems: 'flex-end', gap: Spacing.xs },
   dateRow: { flexDirection: 'row', gap: Spacing.md },
-  dateCol: { flex: 1 },
 });

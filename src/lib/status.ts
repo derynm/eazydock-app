@@ -26,7 +26,13 @@ const TONES: Record<string, Tone> = {
   booked: 'warning',
   // incidents
   open: 'warning',
+  investigating: 'info',
   resolved: 'success',
+  draft: 'neutral',
+  critical: 'danger',
+  high: 'warning',
+  medium: 'info',
+  low: 'neutral',
 };
 
 /** Maps any domain status string to a badge tone + readable label. */

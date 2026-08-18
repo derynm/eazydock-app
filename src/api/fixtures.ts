@@ -329,36 +329,79 @@ export const allocations: Allocation[] = [
 ];
 
 
-const INCIDENT_TYPES_FX = ['overstay', 'damage', 'blocked_space', 'unauthorised_vehicle', 'safety', 'other'] as const;
-const INCIDENT_STATUS_FX = ['open', 'open', 'resolved', 'open', 'cancelled', 'resolved'] as const;
+const INCIDENT_TYPES_FX = ['overstay', 'damage', 'vehicle_collision', 'illegal_parking', 'blocked_space', 'unauthorised_vehicle', 'safety', 'loading_dock_issue', 'other'] as const;
+const INCIDENT_STATUS_FX = ['open', 'investigating', 'resolved', 'open', 'cancelled', 'resolved'] as const;
+const INCIDENT_SEVERITIES_FX = ['critical', 'high', 'medium', 'low'] as const;
 
 export const incidents: Incident[] = Array.from({ length: 10 }).map((_, i) => {
   const txn = transactions[i % 12];
   const space = parkingSpaceResources[i % parkingSpaceResources.length];
   const resolved = INCIDENT_STATUS_FX[i % INCIDENT_STATUS_FX.length] === 'resolved';
   const resolvedAt = resolved ? iso(60 * (i + 1)) : null;
+  const area = parkingAreaResources.find((item) => item.id === space.parking_area_id)!;
+  const building = buildingResources.find((item) => item.id === area.building_id)!;
+  const createdAt = iso(60 * 24 * (i + 1));
   return {
     id: i + 1,
+    incident_no: `INC-2026-${String(i + 1).padStart(5, '0')}`,
     parking_transaction_id: i % 3 === 0 ? txn.id : null,
+    building_id: building.id,
+    parking_area_id: area.id,
     parking_space_id: i % 2 === 0 ? space.id : null,
     incident_type: INCIDENT_TYPES_FX[i % INCIDENT_TYPES_FX.length],
+    severity: INCIDENT_SEVERITIES_FX[i % INCIDENT_SEVERITIES_FX.length],
+    occurred_at: createdAt,
+    submitted_at: createdAt,
+    is_draft: false,
+    location_details: i % 2 === 0 ? `Near ${space.space_code}` : null,
+    weather: i % 3 === 0 ? 'Fine' : null,
+    shift: i % 2 === 0 ? 'Day shift' : 'Evening shift',
     description: [
       'Vehicle has exceeded maximum stay time.',
       'Front bumper damage observed on parked van.',
+      'Two vehicles collided while reversing from adjacent bays.',
+      'Vehicle parked in a restricted loading area.',
       'Bay blocked by unidentified vehicle.',
       'Unregistered vehicle found in reserved area.',
       'Oil spill in bay — hazmat cleanup needed.',
+      'Loading dock obstruction is delaying deliveries.',
       'Space occupied outside of allocated hours.',
-    ][i % 6],
+    ][i % 9],
     status: INCIDENT_STATUS_FX[i % INCIDENT_STATUS_FX.length],
     reported_by: 1,
     resolved_by: resolved ? 1 : null,
     resolved_at: resolvedAt,
-    created_at: iso(60 * 24 * (i + 1)),
+    created_at: createdAt,
     updated_at: resolvedAt ?? iso(60 * 24 * i),
     parking_transaction: i % 3 === 0 ? { id: txn.id, transaction_no: txn.transaction_no } : null,
+    building: { id: building.id, name: building.name, code: building.code },
+    parking_area: { id: area.id, name: area.name, code: area.code },
     parking_space: i % 2 === 0 ? { id: space.id, space_code: space.space_code } : null,
     reporter: { id: 1, name: 'Jordan Avery' },
+    resolver: resolved ? { id: 1, name: 'Jordan Avery' } : null,
+    vehicles: txn.vehicle ? [{
+      id: i + 1,
+      role: 'reporting' as const,
+      vehicle_id: txn.vehicle.id,
+      driver_id: txn.driver?.id ?? null,
+      plate_number: txn.vehicle.plate_number,
+      driver_name: txn.driver?.full_name ?? null,
+      driver_contact: txn.driver?.phone ?? null,
+      company_name: txn.driver?.company_name ?? null,
+      vehicle_type: vehicles.find((item) => item.id === txn.vehicle?.id)?.vehicle_type ?? null,
+    }] : [],
+    witnesses: i % 3 === 0 ? [{ id: i + 1, name: 'Alex Morgan', contact_number: '0400 111 222' }] : [],
+    evidence: [],
+    actions: [{
+      id: i + 1,
+      action_type: 'incident_recorded',
+      label: 'Incident recorded',
+      notes: null,
+      occurred_at: createdAt,
+      performed_by: 1,
+      performer: { id: 1, name: 'Jordan Avery' },
+    }],
+    notes: i % 2 === 0 ? [{ id: i + 1, body: 'Review site footage and confirm the cause.', created_at: iso(60 * 12), created_by: 1, author: { id: 1, name: 'Jordan Avery' } }] : [],
   };
 });
 

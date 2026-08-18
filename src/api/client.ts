@@ -5,7 +5,14 @@ import { storage, StorageKeys } from '@/lib/storage';
 /** Renders a request as a copy-pasteable curl command for debugging (dev only). */
 function toCurl(config: InternalAxiosRequestConfig): string {
   const url = `${config.baseURL ?? ''}${config.url ?? ''}`;
-  const query = config.params ? `?${new URLSearchParams(config.params).toString()}` : '';
+  const queryParams = config.params
+    ? Object.fromEntries(
+        Object.entries(config.params)
+          .filter(([, value]) => value !== undefined && value !== null && value !== '')
+          .map(([key, value]) => [key, String(value)]),
+      )
+    : {};
+  const query = Object.keys(queryParams).length > 0 ? `?${new URLSearchParams(queryParams).toString()}` : '';
   const rawHeaders = (config.headers?.toJSON?.() ?? config.headers ?? {}) as Record<string, unknown>;
   const headerFlags = Object.entries(rawHeaders)
     .filter(([, v]) => v != null)

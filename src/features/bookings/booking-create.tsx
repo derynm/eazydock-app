@@ -156,26 +156,17 @@ export function BookingCreate() {
     a.bay.localeCompare(b.bay, undefined, { numeric: true, sensitivity: 'base' }) ||
     a.startsAt.localeCompare(b.startsAt),
   );
-  const occupiedSpaceIds = new Set(
-    bookingDays.flatMap((groups) => groups)
-      .filter((group) => group.status === 'occupied')
-      .map((group) => group.parking_space_id),
-  );
-  const isImmediateBooking = !!requestedStart && requestedStart.getTime() <= Date.now();
   const bayOptions = spaces.map((space) => {
     const conflicts = bookingConflicts.filter((conflict) => conflict.bay === space.space_code);
-    const currentlyOccupied = isImmediateBooking && occupiedSpaceIds.has(space.id);
     return {
       label: space.space_code,
       value: space.id,
-      hint: currentlyOccupied
-        ? 'Currently occupied · unavailable for an immediate booking'
-        : conflicts.length > 0
+      hint: conflicts.length > 0
         ? conflicts.map((conflict) =>
           `Time conflict · Plate ${conflict.plate} · ${formatConflictTime(conflict.startsAt)}–${formatConflictTime(conflict.endsAt)}`,
         ).join(' • ')
         : 'Available for this schedule',
-      hintTone: currentlyOccupied || conflicts.length > 0 ? 'warning' as const : 'success' as const,
+      hintTone: conflicts.length > 0 ? 'warning' as const : 'success' as const,
     };
   });
 

@@ -147,6 +147,7 @@ export default function TransactionsScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [showExport, setShowExport] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
+  const [openExportAfterFilter, setOpenExportAfterFilter] = useState(false);
   const [areaSelection, setAreaSelection] = useState<{
     companyId: number | null;
     buildingId: number | undefined;
@@ -244,6 +245,15 @@ export default function TransactionsScreen() {
     if (transaction) qc.setQueryData(['transaction-summary', id], transaction);
     router.push(`/transactions/${id}`);
   };
+  const openExport = () => {
+    setOpenExportAfterFilter(true);
+    setShowFilter(false);
+  };
+  const handleFilterClosed = () => {
+    if (!openExportAfterFilter) return;
+    setOpenExportAfterFilter(false);
+    setShowExport(true);
+  };
   const handleCheckOut = async (transaction: Transaction) => {
     const ok = await confirm({
       title: 'Check out vehicle?',
@@ -308,19 +318,6 @@ export default function TransactionsScreen() {
       title="Activity"
       headerRight={
         <View style={styles.headerActions}>
-          {can('operations.transactions', 'export') ? (
-            <IconButton
-              name="download"
-              accessibilityLabel="Export Activity"
-              surface
-              onPress={() => setShowExport(true)}
-              style={{
-                backgroundColor: theme.surface,
-                borderColor: theme.border,
-                borderWidth: 1,
-              }}
-            />
-          ) : null}
           {can('operations.transactions', 'create') ? (
             isTablet ? (
               <Button title="Check in" icon="carIn" size="sm" onPress={() => router.push('/transactions/check-in')} />
@@ -404,7 +401,23 @@ export default function TransactionsScreen() {
         filters={exportFilters}
       />
 
-      <FilterSheet visible={showFilter} onClose={() => setShowFilter(false)} title="Filter activity">
+      <FilterSheet
+        visible={showFilter}
+        onClose={() => setShowFilter(false)}
+        onClosed={handleFilterClosed}
+        title="Filter activity">
+        {can('operations.transactions', 'export') ? (
+          <View style={styles.drawerActionRow}>
+            <Text variant="label" color="textSecondary">Export activity</Text>
+            <IconButton
+              name="download"
+              accessibilityLabel="Export Activity"
+              surface
+              onPress={openExport}
+              style={[styles.filterButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            />
+          </View>
+        ) : null}
         <Select
           value={areaId ?? 0}
           options={areaOptions}
@@ -523,6 +536,7 @@ const styles = StyleSheet.create({
   filterButton: { width: 44, height: 44, borderWidth: 1 },
   filterDot: { position: 'absolute', top: 7, right: 7, width: 7, height: 7, borderRadius: Radius.pill },
   viewRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  drawerActionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
   dateModeField: { gap: Spacing.xs },
   dateRow: { flexDirection: 'row', gap: Spacing.md },
   dateCol: { flex: 1 },

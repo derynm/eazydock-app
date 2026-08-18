@@ -54,6 +54,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await storage.remove(StorageKeys.companyId);
     await storage.remove(StorageKeys.buildingId);
     await storage.remove(StorageKeys.buildingName);
+    await storage.remove(StorageKeys.lastTransactionParkingAreaId);
     setUser(null);
     setCompanies([]);
     setActiveCompanyId(null);
@@ -122,6 +123,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSelectedBuilding(building);
     await storage.set(StorageKeys.buildingId, String(building.id));
     await storage.set(StorageKeys.buildingName, building.name);
+    await storage.remove(StorageKeys.lastTransactionParkingAreaId);
   }, []);
 
   const clearBuilding = useCallback(async () => {
@@ -137,6 +139,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // A building belongs to the previous company scope. Clear it before
       // any queries are refreshed so it cannot leak into the new context.
       await clearBuilding();
+      await storage.remove(StorageKeys.lastTransactionParkingAreaId);
       // Re-fetch permissions for the new scope, then reload every list.
       try {
         await applyPayload(await fetchUser());

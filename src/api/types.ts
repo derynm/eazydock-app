@@ -398,8 +398,19 @@ export type SpaceDefaultUsage = 'building_owner' | 'tenant' | 'contractor' | 'vi
 export type SpaceOperationalStatus = 'active' | 'inactive' | 'maintenance' | 'blocked';
 export type AllocationType = 'flexible_quota' | 'temporary_quota' | 'visitor_quota' | 'loading_quota';
 export type UserCategory = 'building_owner' | 'tenant' | 'contractor' | 'visitor' | 'delivery';
-export type IncidentType = 'damage' | 'unauthorised_vehicle' | 'overstay' | 'blocked_space' | 'safety' | 'other';
-export type IncidentStatus = 'open' | 'resolved' | 'cancelled';
+export type IncidentType =
+  | 'damage'
+  | 'vehicle_collision'
+  | 'illegal_parking'
+  | 'loading_dock_issue'
+  | 'unauthorised_vehicle'
+  | 'overstay'
+  | 'blocked_space'
+  | 'safety'
+  | 'other';
+export type IncidentSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type IncidentStatus = 'open' | 'investigating' | 'resolved' | 'cancelled';
+export type IncidentSubmissionState = 'draft' | 'submitted';
 export type AreaStatus = 'active' | 'inactive' | 'maintenance';
 export type OperatingDay =
   | 'monday'
@@ -524,11 +535,74 @@ export type Allocation = {
 };
 
 
+export type IncidentLocationRef = { id: number; name: string; code?: string | null };
+
+export type IncidentVehicle = {
+  id?: number;
+  role: 'reporting' | 'other';
+  vehicle_id: number | null;
+  driver_id: number | null;
+  plate_number: string;
+  driver_name: string | null;
+  driver_contact: string | null;
+  company_name: string | null;
+  vehicle_type: string | null;
+};
+
+export type IncidentWitness = {
+  id?: number;
+  name: string;
+  contact_number: string | null;
+};
+
+export type IncidentEvidence = {
+  id: number;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  captured_at: string | null;
+  uploaded_by: number;
+  download_url: string;
+};
+
+export type IncidentAction = {
+  id: number;
+  action_type: string;
+  label: string;
+  notes: string | null;
+  occurred_at: string;
+  performed_by: number;
+  performer: { id: number; name: string } | null;
+};
+
+export type IncidentNote = {
+  id: number;
+  body: string;
+  created_at: string;
+  created_by: number;
+  author: { id: number; name: string } | null;
+};
+
 export type Incident = {
   id: number;
+  incident_no: string | null;
   parking_transaction_id: number | null;
+  building_id: number | null;
+  parking_area_id: number | null;
   parking_space_id: number | null;
   incident_type: IncidentType;
+  severity: IncidentSeverity;
+  occurred_at: string;
+  submitted_at: string | null;
+  is_draft: boolean;
+  location_details: string | null;
+  weather: string | null;
+  shift: string | null;
+  location_snapshot?: {
+    building: IncidentLocationRef | null;
+    parking_area: IncidentLocationRef | null;
+    parking_space: { id: number; space_code: string } | null;
+  } | null;
   description: string;
   status: IncidentStatus;
   reported_by: number;
@@ -537,8 +611,46 @@ export type Incident = {
   created_at: string;
   updated_at: string;
   parking_transaction?: { id: number; transaction_no: string } | null;
+  building?: IncidentLocationRef | null;
+  parking_area?: IncidentLocationRef | null;
   parking_space?: { id: number; space_code: string } | null;
   reporter?: { id: number; name: string } | null;
+  resolver?: { id: number; name: string } | null;
+  vehicles?: IncidentVehicle[];
+  witnesses?: IncidentWitness[];
+  evidence?: IncidentEvidence[];
+  actions?: IncidentAction[];
+  notes?: IncidentNote[];
+};
+
+export type IncidentSummary = Record<IncidentSeverity, number> & { total: number };
+
+export type IncidentListResponse = Paginator<Incident> & {
+  summary: IncidentSummary;
+  filters?: { date_from?: string | null; date_to?: string | null };
+};
+
+export type IncidentFormData = {
+  incident_types: { value: IncidentType; label: string }[];
+  severities: { value: IncidentSeverity; label: string }[];
+  statuses: { value: IncidentStatus; label: string }[];
+  action_presets: { value: string; label: string }[];
+  buildings: { id: number; name: string; code: string | null }[];
+  parking_areas: { id: number; building_id: number; name: string; code: string | null }[];
+  parking_spaces: { id: number; building_id: number; parking_area_id: number; space_code: string }[];
+  evidence_limits: { max_files: number; max_size_kb: number; mime_types: string[] };
+};
+
+export type IncidentTransactionOption = {
+  id: number;
+  transaction_no: string;
+  status: string;
+  car_in_at: string;
+  building: IncidentLocationRef | null;
+  parking_area: IncidentLocationRef | null;
+  parking_space: { id: number; space_code: string } | null;
+  vehicle: { id: number; plate_number: string; vehicle_type: string | null } | null;
+  driver: { id: number; full_name: string; phone: string | null; company_name: string | null } | null;
 };
 
 /* ---- Users (§6D) ---- */

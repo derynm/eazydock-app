@@ -57,9 +57,10 @@ export function AutocompleteField({
 }: Props) {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
+  const [selectionDismissed, setSelectionDismissed] = useState(false);
   const debounced = useDebouncedValue(value, 250);
   const term = debounced.trim();
-  const active = focused && term.length >= minChars;
+  const active = focused && !selectionDismissed && term.length >= minChars;
 
   const { data: results = [], isFetching } = useQuery({
     queryKey: ['autocomplete', queryKey, term],
@@ -72,9 +73,15 @@ export function AutocompleteField({
       <TextField
         {...field}
         value={value}
-        onChangeText={onChangeText}
+        onChangeText={(text) => {
+          setSelectionDismissed(false);
+          onChangeText(text);
+        }}
         autoCorrect={false}
-        onFocus={() => setFocused(true)}
+        onFocus={() => {
+          setFocused(true);
+          setSelectionDismissed(false);
+        }}
         onBlur={() => setTimeout(() => setFocused(false), 150)}
         onEndEditing={onEndEditing}
         onSubmitEditing={onSubmitEditing}
@@ -107,7 +114,7 @@ export function AutocompleteField({
                   key={item.id}
                   onPress={() => {
                     onSelect(item);
-                    setFocused(false);
+                    setSelectionDismissed(true);
                   }}
                   style={({ pressed }) => [
                     styles.item,

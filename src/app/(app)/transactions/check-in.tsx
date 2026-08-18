@@ -19,6 +19,7 @@ import { PlateScanner } from '@/features/transactions/plate-scanner';
 import { timeAgo } from '@/lib/format';
 import { DRIVER_TYPES } from '@/lib/options';
 import { zodResolver } from '@/lib/zod-resolver';
+import { storage, StorageKeys } from '@/lib/storage';
 
 const EMPTY: CheckInForm = {
   building_id: 0,
@@ -61,6 +62,8 @@ export default function CheckInScreen() {
   const [driverText, setDriverText] = useState('');
   const [driverCompany, setDriverCompany] = useState('');
   const [vehicleType, setVehicleType] = useState<VehicleType | undefined>();
+  const [lastParkingAreaId, setLastParkingAreaId] = useState<number | null>(null);
+  const [hasAppliedLastParkingArea, setHasAppliedLastParkingArea] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   const { control, handleSubmit, watch, setValue, getValues, setError } = useForm<CheckInForm>({
@@ -77,7 +80,10 @@ export default function CheckInScreen() {
 
   // Keep the hidden form field in sync if the user switches buildings.
   useEffect(() => {
-    if (buildingId) setValue('building_id', buildingId);
+    if (!buildingId) return;
+    setValue('building_id', buildingId);
+    setValue('parking_area_id', 0);
+    setValue('parking_space_id', null);
   }, [buildingId, setValue]);
 
   useEffect(() => {
@@ -89,6 +95,28 @@ export default function CheckInScreen() {
   const { data: areas = [] } = useQuery({ queryKey: ['lookup-areas', buildingId], queryFn: () => lookupParkingAreas(buildingId), enabled: !!buildingId });
   const { data: spaces = [] } = useQuery({ queryKey: ['lookup-spaces', areaId], queryFn: () => lookupParkingSpaces(areaId, true), enabled: !!areaId });
   const { data: tenants = [] } = useQuery({ queryKey: ['lookup-tenants', buildingId], queryFn: () => lookupTenants(buildingId), enabled: !!buildingId });
+
+  useEffect(() => {
+    let active = true;
+    setHasAppliedLastParkingArea(false);
+    setLastParkingAreaId(null);
+    void storage.get(StorageKeys.lastTransactionParkingAreaId).then((value) => {
+      if (!active) return;
+      const parsed = value ? Number(value) : NaN;
+      setLastParkingAreaId(Number.isInteger(parsed) && parsed > 0 ? parsed : null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [buildingId]);
+
+  useEffect(() => {
+    if (hasAppliedLastParkingArea || !areas.length || lastParkingAreaId == null) return;
+    setHasAppliedLastParkingArea(true);
+    if (areas.some((area) => area.id === lastParkingAreaId) && !getValues('parking_area_id')) {
+      setValue('parking_area_id', lastParkingAreaId);
+    }
+  }, [areas, getValues, hasAppliedLastParkingArea, lastParkingAreaId, setValue]);
 
   // Plate lookup → prefill from the vehicle's last visit, or flag a new vehicle.
   const runLookup = async () => {
@@ -193,7 +221,8 @@ export default function CheckInScreen() {
       return checkIn(input);
     },
     onMutate: () => setTopError(null),
-    onSuccess: (txn) => {
+    onSuccess: async (txn, values) => {
+      await storage.set(StorageKeys.lastTransactionParkingAreaId, String(values.parking_area_id));
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['active-vehicles'] });
       qc.invalidateQueries({ queryKey: ['transaction-scope-count'] });

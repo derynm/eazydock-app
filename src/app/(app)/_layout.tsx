@@ -72,6 +72,7 @@ export default function AppLayout() {
     <Stack screenOptions={{ ...contentScreenOptions, contentStyle: { backgroundColor: theme.background } }}>
       <Stack.Screen name="transactions/check-in" options={flowScreenOptions} />
       <Stack.Screen name="bookings/create" options={flowScreenOptions} />
+      <Stack.Screen name="incidents/create" options={flowScreenOptions} />
     </Stack>
   );
 

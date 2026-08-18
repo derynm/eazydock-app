@@ -96,7 +96,16 @@ export async function listActiveVehicles(params: ListParams = {}): Promise<Pagin
   }
 }
 
-export type VehicleSearchResult = { id: number; car_id: number | null; plate_number: string };
+export type VehicleSearchResult = {
+  id: number;
+  car_id: number | null;
+  plate_number: string;
+  vehicle_type?: VehicleType;
+  driver_id?: number | null;
+  driver_name?: string | null;
+  driver_phone?: string | null;
+  company_name?: string | null;
+};
 
 /** Type-ahead over existing vehicles by plate (plan §6A: vehicle-search). */
 export async function searchVehicles(q: string): Promise<VehicleSearchResult[]> {
@@ -107,7 +116,19 @@ export async function searchVehicles(q: string): Promise<VehicleSearchResult[]> 
       fx.vehicles
         .filter((v) => v.plate_number.replace(/[^A-Za-z0-9]/g, '').toLowerCase().includes(term))
         .slice(0, 10)
-        .map((v) => ({ id: v.id, car_id: v.car_id, plate_number: v.plate_number })),
+        .map((v) => {
+          const recentTransaction = fx.transactions.find((transaction) => transaction.vehicle_id === v.id && transaction.driver);
+          return {
+            id: v.id,
+            car_id: v.car_id,
+            plate_number: v.plate_number,
+            vehicle_type: v.vehicle_type,
+            driver_id: recentTransaction?.driver?.id ?? null,
+            driver_name: recentTransaction?.driver?.full_name ?? null,
+            driver_phone: recentTransaction?.driver?.phone ?? null,
+            company_name: recentTransaction?.driver?.company_name ?? null,
+          };
+        }),
     );
   }
   try {
@@ -405,9 +426,19 @@ export async function markOverstay(id: number, description: string): Promise<Inc
     const nowIso = new Date().toISOString();
     const incident: Incident = {
       id: fx.nextId(fx.incidents),
+      incident_no: `INC-2026-${String(fx.nextId(fx.incidents)).padStart(5, '0')}`,
       parking_transaction_id: txn.id,
+      building_id: txn.building_id,
+      parking_area_id: txn.parking_area_id,
       parking_space_id: txn.parking_space_id,
       incident_type: 'overstay',
+      severity: 'medium',
+      occurred_at: nowIso,
+      submitted_at: nowIso,
+      is_draft: false,
+      location_details: null,
+      weather: null,
+      shift: null,
       description,
       status: 'open',
       reported_by: 1,
@@ -416,8 +447,16 @@ export async function markOverstay(id: number, description: string): Promise<Inc
       created_at: nowIso,
       updated_at: nowIso,
       parking_transaction: { id: txn.id, transaction_no: txn.transaction_no },
+      building: txn.building ? { ...txn.building, code: null } : null,
+      parking_area: txn.parking_area ? { ...txn.parking_area, code: null } : null,
       parking_space: txn.parking_space ? { id: txn.parking_space.id, space_code: txn.parking_space.space_code } : null,
       reporter: { id: 1, name: 'Jordan Avery' },
+      resolver: null,
+      vehicles: [],
+      witnesses: [],
+      evidence: [],
+      actions: [{ id: 1, action_type: 'incident_recorded', label: 'Incident recorded', notes: null, occurred_at: nowIso, performed_by: 1, performer: { id: 1, name: 'Jordan Avery' } }],
+      notes: [],
     };
     fx.incidents.unshift(incident);
     const txnIdx = fx.transactions.findIndex((t) => t.id === id);
@@ -548,8 +587,11 @@ export async function exportTransactions(format: ExportFormat, params: ListParam
   }
 
   try {
+    const exportParams = Object.fromEntries(
+      Object.entries({ ...params, format }).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+    );
     const { data, headers } = await api.get<ArrayBuffer>('/admin/transactions/export', {
-      params: { ...params, format },
+      params: exportParams,
       responseType: 'arraybuffer',
     });
     const filename =

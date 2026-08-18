@@ -215,10 +215,20 @@ export type AllocationForm = z.infer<typeof allocationSchema>;
 
 export const incidentSchema = z.object({
   parking_transaction_id: z.number().int().positive().nullable().optional(),
+  building_id: z.number().int().positive().nullable().optional(),
+  parking_area_id: z.number().int().positive('Select a parking area').nullable(),
   parking_space_id: z.number().int().positive().nullable().optional(),
-  incident_type: z.enum(['damage', 'unauthorised_vehicle', 'overstay', 'blocked_space', 'safety', 'other']),
+  incident_type: z.enum(['damage', 'vehicle_collision', 'illegal_parking', 'loading_dock_issue', 'unauthorised_vehicle', 'overstay', 'blocked_space', 'safety', 'other']),
+  severity: z.enum(['critical', 'high', 'medium', 'low']),
+  occurred_at: z.string().min(1, 'Date and time are required'),
   description: z.string().min(1, 'Description is required').max(2000),
-  status: z.enum(['open', 'resolved', 'cancelled']).optional(),
+  location_details: optionalString(500),
+  weather: optionalString(100),
+  shift: optionalString(100),
+  status: z.enum(['open', 'investigating', 'resolved', 'cancelled']).optional(),
+}).refine((v) => !!v.parking_transaction_id || !!v.parking_area_id, {
+  message: 'Select a transaction or parking area',
+  path: ['parking_area_id'],
 });
 export type IncidentForm = z.infer<typeof incidentSchema>;
 
